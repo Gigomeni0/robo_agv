@@ -34,17 +34,16 @@ btn_Right_Rotate = ttk.Button(master=commands_frame, text="Giro Horário", comma
 btn_Left_Rotate = ttk.Button(master= commands_frame, text="Giro Anti-horário", command=lambda: mc.send_command("E", canvas, figure, server.client_socket, environment)).pack()
 btn_Trás = ttk.Button(master=commands_frame, text="Parada", command=lambda: mc.send_command("T", canvas, figure, server.client_socket, environment)).pack()
 
-tab2 = ttk.Frame(tab_control)
-tab_control.add(tab2, text='Controle Automático')
+# Criando a função de desenho do grafico matplotlib da movimentação do robô
 
 # Criação da figura do Matplotlib
 figure = plt.figure(figsize=(5, 5))
-canvas = FigureCanvasTkAgg(figure, master=tab2)
+canvas = FigureCanvasTkAgg(figure, master=tab1)
 canvas_widget = canvas.get_tk_widget()
 canvas_widget.pack(side= tk.TOP, fill=tk.NONE, expand=True)
 
 # Botões de comando
-frame = tk.Frame(tab2)
+frame = tk.Frame(tab1)
 frame.pack(side=tk.BOTTOM)
 
 def send_forward():
@@ -65,6 +64,10 @@ environment = np.zeros((20, 20))
 mc.update_environment(environment, (0, 0))
 ag.draw_environment(canvas, figure, np.zeros((20, 20)), (0, 0))
 
+
+
+tab2 = ttk.Frame(tab_control)
+tab_control.add(tab2, text='Mapa do Ambiente')
 
 tab3 = ttk.Frame(tab_control)
 tab_control.add(tab3, text='Configurações de Robô')

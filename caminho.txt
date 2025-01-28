@@ -1,0 +1,7 @@
+Posição final: (2, 1), Orientação: E, Passos: 5
+Comandos:
+D
+F
+F
+E
+F
