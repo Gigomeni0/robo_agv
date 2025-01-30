@@ -4,6 +4,8 @@ import numpy as np
 import tkinter as tk
 from tkinter import ttk
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+import os
+import json
 
 class RoboGUI:
     def __init__(self, root):
@@ -49,8 +51,21 @@ class RoboGUI:
         self.btn_direita = ttk.Button(self.frame_controles_lateral, text="Direita", command=lambda: self.mover_robo("D"))
         self.btn_direita.grid(row=1, column=2)
 
-        self.btn_salvar = ttk.Button(self.frame_controles_lateral, text="Salvar Caminho", command=self.salvar_caminho)
-        self.btn_salvar.grid(row=2, column=1)
+        self.btn_salvar_ponto = ttk.Button(self.frame_controles_lateral, text="Salvar Ponto", command=self.salvar_ponto)
+        self.btn_salvar_ponto.grid(row=2, column=0)
+
+        self.btn_salvar_rota = ttk.Button(self.frame_controles_lateral, text="Salvar Rota", command=self.salvar_rota)
+        self.btn_salvar_rota.grid(row=2, column=2)
+
+        self.btn_retornar_inicio = ttk.Button(self.frame_controles_lateral, text="Retornar ao Início", command=self.retornar_inicio)
+        self.btn_retornar_inicio.grid(row=3, column=1)
+
+        # Lista de rotas salvas
+        self.lista_rotas = tk.Listbox(self.frame_controles_lateral)
+        self.lista_rotas.grid(row=4, column=0, columnspan=3, pady=10)
+
+        self.btn_executar_rota = ttk.Button(self.frame_controles_lateral, text="Executar Rota", command=self.executar_rota)
+        self.btn_executar_rota.grid(row=5, column=1)
 
         # Configurar gráfico
         self.fig, self.ax = plt.subplots(figsize=(5, 5))
@@ -66,6 +81,13 @@ class RoboGUI:
 
         # Inicializar o ambiente
         self.desenhar_ambiente(self.estado_robo[:2])
+
+        # Capturar evento de fechamento da janela
+        self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
+
+        # Carregar pontos e rotas salvas
+        self.carregar_pontos()
+        self.carregar_rotas()
 
     def verificar_sensores(self, linha, coluna, orientacao):
         sensores = [1, 1, 1]  # Inicialmente assume que todos os lados têm obstáculos
@@ -143,26 +165,153 @@ class RoboGUI:
         # Desenhar o ambiente e o robô
         self.desenhar_ambiente((linha, coluna))
 
-    def salvar_caminho(self):
+    def salvar_ponto(self):
         linha, coluna, orientacao, passos = self.estado_robo
-        with open("caminho.txt", "r") as f:
-            f.write(f"Posição final: ({linha}, {coluna}), Orientação: {orientacao}, Passos: {passos}\n")
-            f.write("Comandos:\n")
-            for comando in self.comandos:
-                f.write(f"{comando}\n")
-        print("Caminho salvo em caminho.txt")
+        caminho_arquivo = "python/graphic_method/pontos_salvos.json"
+        ponto_nome = f"Ponto {len(self.lista_pontos.get(0, tk.END)) + 1}"
+        ponto = {
+            "nome": ponto_nome,
+            "posicao_final": {"linha": linha, "coluna": coluna},
+            "orientacao": orientacao,
+            "passos": passos,
+            "comandos": self.comandos
+        }
+        if os.path.exists(caminho_arquivo):
+            with open(caminho_arquivo, "r") as f:
+                try:
+                    dados = json.load(f)
+                except json.JSONDecodeError:
+                    dados = []
+        else:
+            dados = []
+
+        dados.append(ponto)
+
+        with open(caminho_arquivo, "w") as f:
+            json.dump(dados, f, indent=4)
+        print(f"Ponto salvo em {caminho_arquivo}")
 
         # Adicionar ponto salvo à lista de pontos
-        self.lista_pontos.insert(tk.END, f"({linha}, {coluna}) - {orientacao}")
+        self.lista_pontos.insert(tk.END, ponto_nome)
+
+    def salvar_rota(self):
+        caminho_arquivo = "python/graphic_method/rotas_salvas.json"
+        rota_nome = f"Rota {len(self.lista_rotas.get(0, tk.END)) + 1}"
+        rota = {
+            "nome": rota_nome,
+            "comandos": self.comandos
+        }
+        if os.path.exists(caminho_arquivo):
+            with open(caminho_arquivo, "r") as f:
+                try:
+                    dados = json.load(f)
+                except json.JSONDecodeError:
+                    dados = []
+        else:
+            dados = []
+
+        dados.append(rota)
+
+        with open(caminho_arquivo, "w") as f:
+            json.dump(dados, f, indent=4)
+        print(f"Rota salva em {caminho_arquivo}")
+
+        # Adicionar rota salva à lista de rotas
+        self.lista_rotas.insert(tk.END, rota_nome)
+
+    def carregar_pontos(self):
+        caminho_arquivo = "python/graphic_method/pontos_salvos.json"
+        if os.path.exists(caminho_arquivo):
+            with open(caminho_arquivo, "r") as f:
+                try:
+                    dados = json.load(f)
+                except json.JSONDecodeError:
+                    dados = []
+            for ponto in dados:
+                if "nome" in ponto:
+                    self.lista_pontos.insert(tk.END, ponto["nome"])
+
+    def carregar_rotas(self):
+        caminho_arquivo = "python/graphic_method/rotas_salvas.json"
+        if os.path.exists(caminho_arquivo):
+            with open(caminho_arquivo, "r") as f:
+                try:
+                    dados = json.load(f)
+                except json.JSONDecodeError:
+                    dados = []
+            for rota in dados:
+                if "nome" in rota:
+                    self.lista_rotas.insert(tk.END, rota["nome"])
 
     def mover_para_ponto(self):
         selecionado = self.lista_pontos.curselection()
         if selecionado:
-            ponto = self.lista_pontos.get(selecionado)
-            linha, coluna = map(int, ponto.split(')')[0][1:].split(','))
-            orientacao = ponto.split('-')[1].strip()
-            self.estado_robo = (linha, coluna, orientacao, 0)
-            self.desenhar_ambiente((linha, coluna))
+            ponto_nome = self.lista_pontos.get(selecionado)
+            caminho_arquivo = "python/graphic_method/pontos_salvos.json"
+            with open(caminho_arquivo, "r") as f:
+                dados = json.load(f)
+            for p in dados:
+                if p["nome"] == ponto_nome:
+                    self.estado_robo = (p["posicao_final"]["linha"], p["posicao_final"]["coluna"], p["orientacao"], 0)
+                    self.comandos = p["comandos"]
+                    break
+            self.desenhar_ambiente((self.estado_robo[0], self.estado_robo[1]))
+
+    def executar_rota(self):
+        selecionado = self.lista_rotas.curselection()
+        if selecionado:
+            rota_nome = self.lista_rotas.get(selecionado)
+            caminho_arquivo = "python/graphic_method/rotas_salvas.json"
+            with open(caminho_arquivo, "r") as f:
+                dados = json.load(f)
+            for r in dados:
+                if r["nome"] == rota_nome:
+                    comandos = r["comandos"]
+                    break
+            # Reiniciar o robô na posição inicial
+            self.estado_robo = (0, 0, "E", 0)
+            self.comandos = []
+            self.desenhar_ambiente((0, 0))
+            self.executar_comandos(comandos)
+
+    def executar_comandos(self, comandos):
+        if comandos:
+            comando = comandos.pop(0)
+            self.mover_robo(comando)
+            self.root.after(500, lambda: self.executar_comandos(comandos))  # Atraso de 500ms entre os comandos
+
+    def retornar_inicio(self):
+        comandos_retorno = self.inverter_comandos(self.comandos)
+        self.executar_comandos(comandos_retorno)
+
+    def inverter_comandos(self, comandos):
+        orientacao_atual = self.estado_robo[2]
+        comandos_invertidos = []
+        for comando in reversed(comandos):
+            if comando == "F":
+                comandos_invertidos.append("F")
+            elif comando == "E":
+                orientacao_atual = self.nova_orientacao(orientacao_atual, "D")
+                comandos_invertidos.append("D")
+            elif comando == "D":
+                orientacao_atual = self.nova_orientacao(orientacao_atual, "E")
+                comandos_invertidos.append("E")
+        # Adicionar duas rotações para inverter a direção
+        comandos_invertidos.insert(0, "D")
+        comandos_invertidos.insert(0, "D")
+        return comandos_invertidos
+
+    def nova_orientacao(self, orientacao_atual, comando):
+        orientacoes = ["N", "E", "S", "W"]
+        idx = orientacoes.index(orientacao_atual)
+        if comando == "E":
+            return orientacoes[(idx - 1) % 4]
+        elif comando == "D":
+            return orientacoes[(idx + 1) % 4]
+
+    def on_closing(self):
+        self.root.destroy()
+        print("Janela fechada e programa finalizado.")
 
 if __name__ == "__main__":
     root = tk.Tk()

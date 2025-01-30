@@ -1,0 +1,22 @@
+[
+    {
+        "nome": "Rota 1",
+        "comandos": [
+            "D",
+            "F",
+            "F",
+            "E",
+            "F"
+        ]
+    },
+    {
+        "nome": "Rota 2",
+        "comandos": [
+            "D",
+            "F",
+            "F",
+            "E",
+            "F"
+        ]
+    }
+]
