@@ -2,7 +2,36 @@
     {
         "nome": "Rota 1",
         "comandos": [
+            "F",
+            "F",
             "D",
+            "F",
+            "D",
+            "D",
+            "F",
+            "E",
+            "F",
+            "F"
+        ]
+    },
+    {
+        "nome": "Rota 2",
+        "comandos": [
+            "F"
+        ]
+    },
+    {
+        "nome": "Rota 3",
+        "comandos": [
+            "F",
+            "E",
+            "F",
+            "F",
+            "E",
+            "F",
+            "F",
+            "F",
+            "E",
             "F",
             "F",
             "E",
@@ -10,12 +39,15 @@
         ]
     },
     {
-        "nome": "Rota 2",
+        "nome": "Rota 4",
         "comandos": [
+            "D",
             "D",
             "F",
             "F",
             "E",
+            "E",
+            "F",
             "F"
         ]
     }

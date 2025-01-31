@@ -12,21 +12,27 @@ class RoboGUI:
         self.root = root
         self.root.title("Controle Manual do Robô")
 
-        # Criando a matriz do ambiente
+        # Criando a matriz do ambiente (10x10)
         self.matriz = [
-            [0, 0, 1, 0, 0],
-            [0, 1, 0, 0, 0],
-            [0, 0, 0, 1, 0],
-            [1, 0, 0, 0, 0],
-            [0, 0, 0, 0, 0]
+            [0, 0, 1, 0, 0, 0, 0, 0, 0, 0],
+            [0, 1, 0, 0, 0, 0, 0, 0, 0, 0],
+            [0, 0, 0, 1, 0, 0, 0, 0, 0, 0],
+            [1, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+            [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+            [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+            [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+            [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+            [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+            [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
         ]
 
         # Dimensões da matriz
         self.linhas = len(self.matriz)
         self.colunas = len(self.matriz[0])
 
-        # Inicializando o estado do robô
-        self.estado_robo = (0, 0, "E", 0)  # (linha, coluna, orientação, passos)
+        # Carregar a última posição do robô a partir do arquivo position.json
+        self.estado_robo = self.carregar_ultima_posicao()
+
         self.comandos = []  # Lista para armazenar os comandos
 
         # Configurar interface gráfica
@@ -36,8 +42,8 @@ class RoboGUI:
         self.frame_controles = ttk.Frame(self.notebook)
         self.notebook.add(self.frame_controles, text='Controles')
 
-        self.frame_pontos = ttk.Frame(self.notebook)
-        self.notebook.add(self.frame_pontos, text='Pontos Salvos')
+        self.frame_rotas = ttk.Frame(self.notebook)
+        self.notebook.add(self.frame_rotas, text='Rotas Salvas')
 
         self.frame_controles_lateral = ttk.Frame(self.frame_controles)
         self.frame_controles_lateral.pack(side=tk.LEFT, padx=10, pady=10)
@@ -51,8 +57,8 @@ class RoboGUI:
         self.btn_direita = ttk.Button(self.frame_controles_lateral, text="Direita", command=lambda: self.mover_robo("D"))
         self.btn_direita.grid(row=1, column=2)
 
-        self.btn_salvar_ponto = ttk.Button(self.frame_controles_lateral, text="Salvar Ponto", command=self.salvar_ponto)
-        self.btn_salvar_ponto.grid(row=2, column=0)
+        self.btn_iniciar_gravacao = ttk.Button(self.frame_controles_lateral, text="Iniciar Gravação", command=self.iniciar_gravacao)
+        self.btn_iniciar_gravacao.grid(row=2, column=0)
 
         self.btn_salvar_rota = ttk.Button(self.frame_controles_lateral, text="Salvar Rota", command=self.salvar_rota)
         self.btn_salvar_rota.grid(row=2, column=2)
@@ -60,24 +66,25 @@ class RoboGUI:
         self.btn_retornar_inicio = ttk.Button(self.frame_controles_lateral, text="Retornar ao Início", command=self.retornar_inicio)
         self.btn_retornar_inicio.grid(row=3, column=1)
 
-        # Lista de rotas salvas
-        self.lista_rotas = tk.Listbox(self.frame_controles_lateral)
-        self.lista_rotas.grid(row=4, column=0, columnspan=3, pady=10)
+        # Botão para limpar memória
+        self.btn_limpar_memoria = ttk.Button(self.frame_controles_lateral, text="Limpar Memória", command=self.limpar_memoria)
+        self.btn_limpar_memoria.grid(row=4, column=1)
 
-        self.btn_executar_rota = ttk.Button(self.frame_controles_lateral, text="Executar Rota", command=self.executar_rota)
-        self.btn_executar_rota.grid(row=5, column=1)
+        # Exibir coordenada atual do robô
+        self.label_coordenadas = ttk.Label(self.frame_controles_lateral, text=f"Coordenadas: ({self.estado_robo[0]}, {self.estado_robo[1]})")
+        self.label_coordenadas.grid(row=5, column=0, columnspan=3, pady=10)
+
+        # Lista de rotas salvas
+        self.lista_rotas = tk.Listbox(self.frame_rotas)
+        self.lista_rotas.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+
+        self.btn_executar_rota = ttk.Button(self.frame_rotas, text="Executar Rota", command=self.executar_rota)
+        self.btn_executar_rota.pack(pady=10)
 
         # Configurar gráfico
         self.fig, self.ax = plt.subplots(figsize=(5, 5))
         self.canvas = FigureCanvasTkAgg(self.fig, master=self.frame_controles)
         self.canvas.get_tk_widget().pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
-
-        # Lista de pontos salvos
-        self.lista_pontos = tk.Listbox(self.frame_pontos)
-        self.lista_pontos.pack(fill=tk.BOTH, expand=True)
-
-        self.btn_mover_para_ponto = ttk.Button(self.frame_pontos, text="Mover para Ponto", command=self.mover_para_ponto)
-        self.btn_mover_para_ponto.pack()
 
         # Inicializar o ambiente
         self.desenhar_ambiente(self.estado_robo[:2])
@@ -85,9 +92,20 @@ class RoboGUI:
         # Capturar evento de fechamento da janela
         self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
 
-        # Carregar pontos e rotas salvas
-        self.carregar_pontos()
+        # Carregar rotas salvas
         self.carregar_rotas()
+
+    def carregar_ultima_posicao(self):
+        caminho_arquivo = "python/graphic_method/position.json"
+        if os.path.exists(caminho_arquivo):
+            with open(caminho_arquivo, "r") as f:
+                try:
+                    dados = json.load(f)
+                    return (dados["linha"], dados["coluna"], dados["orientacao"], dados["passos"])
+                except json.JSONDecodeError:
+                    pass
+        # Se o arquivo não existir ou houver um erro, inicializar no centro, virado para o norte
+        return (self.linhas // 2, self.colunas // 2, "N", 0)
 
     def verificar_sensores(self, linha, coluna, orientacao):
         sensores = [1, 1, 1]  # Inicialmente assume que todos os lados têm obstáculos
@@ -162,37 +180,18 @@ class RoboGUI:
         # Adicionar comando à lista de comandos
         self.comandos.append(comando)
 
+        # Atualizar a exibição das coordenadas
+        self.label_coordenadas.config(text=f"Coordenadas: ({linha}, {coluna})")
+
+        # Salvar coordenadas no arquivo JSON
+        self.salvar_coordenadas((linha, coluna, orientacao, passos + 1))
+
         # Desenhar o ambiente e o robô
         self.desenhar_ambiente((linha, coluna))
 
-    def salvar_ponto(self):
-        linha, coluna, orientacao, passos = self.estado_robo
-        caminho_arquivo = "python/graphic_method/pontos_salvos.json"
-        ponto_nome = f"Ponto {len(self.lista_pontos.get(0, tk.END)) + 1}"
-        ponto = {
-            "nome": ponto_nome,
-            "posicao_final": {"linha": linha, "coluna": coluna},
-            "orientacao": orientacao,
-            "passos": passos,
-            "comandos": self.comandos
-        }
-        if os.path.exists(caminho_arquivo):
-            with open(caminho_arquivo, "r") as f:
-                try:
-                    dados = json.load(f)
-                except json.JSONDecodeError:
-                    dados = []
-        else:
-            dados = []
-
-        dados.append(ponto)
-
-        with open(caminho_arquivo, "w") as f:
-            json.dump(dados, f, indent=4)
-        print(f"Ponto salvo em {caminho_arquivo}")
-
-        # Adicionar ponto salvo à lista de pontos
-        self.lista_pontos.insert(tk.END, ponto_nome)
+    def iniciar_gravacao(self):
+        self.comandos = []
+        print("Gravação de rota iniciada.")
 
     def salvar_rota(self):
         caminho_arquivo = "python/graphic_method/rotas_salvas.json"
@@ -219,17 +218,17 @@ class RoboGUI:
         # Adicionar rota salva à lista de rotas
         self.lista_rotas.insert(tk.END, rota_nome)
 
-    def carregar_pontos(self):
-        caminho_arquivo = "python/graphic_method/pontos_salvos.json"
-        if os.path.exists(caminho_arquivo):
-            with open(caminho_arquivo, "r") as f:
-                try:
-                    dados = json.load(f)
-                except json.JSONDecodeError:
-                    dados = []
-            for ponto in dados:
-                if "nome" in ponto:
-                    self.lista_pontos.insert(tk.END, ponto["nome"])
+    def salvar_coordenadas(self, estado_robo):
+        caminho_arquivo = "python/graphic_method/position.json"
+        dados = {
+            "linha": estado_robo[0],
+            "coluna": estado_robo[1],
+            "orientacao": estado_robo[2],
+            "passos": estado_robo[3]
+        }
+        with open(caminho_arquivo, "w") as f:
+            json.dump(dados, f, indent=4)
+        print(f"Coordenadas salvas em {caminho_arquivo}")
 
     def carregar_rotas(self):
         caminho_arquivo = "python/graphic_method/rotas_salvas.json"
@@ -243,20 +242,6 @@ class RoboGUI:
                 if "nome" in rota:
                     self.lista_rotas.insert(tk.END, rota["nome"])
 
-    def mover_para_ponto(self):
-        selecionado = self.lista_pontos.curselection()
-        if selecionado:
-            ponto_nome = self.lista_pontos.get(selecionado)
-            caminho_arquivo = "python/graphic_method/pontos_salvos.json"
-            with open(caminho_arquivo, "r") as f:
-                dados = json.load(f)
-            for p in dados:
-                if p["nome"] == ponto_nome:
-                    self.estado_robo = (p["posicao_final"]["linha"], p["posicao_final"]["coluna"], p["orientacao"], 0)
-                    self.comandos = p["comandos"]
-                    break
-            self.desenhar_ambiente((self.estado_robo[0], self.estado_robo[1]))
-
     def executar_rota(self):
         selecionado = self.lista_rotas.curselection()
         if selecionado:
@@ -269,9 +254,9 @@ class RoboGUI:
                     comandos = r["comandos"]
                     break
             # Reiniciar o robô na posição inicial
-            self.estado_robo = (0, 0, "E", 0)
+            self.estado_robo = (self.linhas // 2, self.colunas // 2, "N", 0)
             self.comandos = []
-            self.desenhar_ambiente((0, 0))
+            self.desenhar_ambiente((self.linhas // 2, self.colunas // 2))
             self.executar_comandos(comandos)
 
     def executar_comandos(self, comandos):
@@ -308,6 +293,21 @@ class RoboGUI:
             return orientacoes[(idx - 1) % 4]
         elif comando == "D":
             return orientacoes[(idx + 1) % 4]
+
+    def limpar_memoria(self):
+        # Deletar arquivos de rotas e coordenadas
+        if os.path.exists("python/graphic_method/rotas_salvas.json"):
+            os.remove("python/graphic_method/rotas_salvas.json")
+        if os.path.exists("python/graphic_method/position.json"):
+            os.remove("python/graphic_method/position.json")
+
+        # Reposicionar o robô no centro, orientado ao norte
+        self.estado_robo = (self.linhas // 2, self.colunas // 2, "N", 0)
+        self.comandos = []
+        self.label_coordenadas.config(text=f"Coordenadas: ({self.estado_robo[0]}, {self.estado_robo[1]})")
+        self.lista_rotas.delete(0, tk.END)
+        self.desenhar_ambiente((self.linhas // 2, self.colunas // 2))
+        print("Memória limpa e robô reposicionado.")
 
     def on_closing(self):
         self.root.destroy()
