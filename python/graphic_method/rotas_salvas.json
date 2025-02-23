@@ -4,51 +4,43 @@
         "comandos": [
             "F",
             "F",
+            "F",
             "D",
+            "F",
             "F",
             "D",
             "D",
+            "F",
             "F",
             "E",
             "F",
-            "F"
-        ]
+            "F",
+            "F",
+            "W5"  // Esperar 5 segundos
+        ],
+        "orientacao_inicial": "S"
     },
     {
         "nome": "Rota 2",
-        "comandos": [
-            "F"
-        ]
+        "comandos": [],
+        "orientacao_inicial": "S"
     },
     {
         "nome": "Rota 3",
         "comandos": [
             "F",
-            "E",
+            "F",
+            "D",
             "F",
             "F",
-            "E",
-            "F",
-            "F",
-            "F",
-            "E",
-            "F",
-            "F",
-            "E",
-            "F"
-        ]
-    },
-    {
-        "nome": "Rota 4",
-        "comandos": [
             "D",
             "D",
             "F",
             "F",
             "E",
-            "E",
             "F",
             "F"
-        ]
+        ],
+        "orientacao_inicial": "N"
     }
 ]
