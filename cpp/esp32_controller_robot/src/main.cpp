@@ -1,109 +1,66 @@
-#include <WiFi.h>
+#include <Arduino.h>
 
-// Configurações Wi-Fi
-const char *ssid = "Gigo 2.4G";
-const char *password = "18253122Ro";
+// Pinos do enco
+#define ENCODER_A 2
+#define ENCODER_B 3
 
-// Configurações do servidor
-const char *serverIP = "192.168.15.12"; // Substitua pelo IP do servidor
-const int serverPort = 65432;
+// Pinos da ponte H
+#define IN1 4
+#define IN2 5
 
-WiFiClient client;
+// Variáveis para o encoder
+volatile long pulseCount = 0;
+int pulsesPerRevolution = 11; // 11 pulsos por revolução
+float rpm = 0;
+unsigned long lastTime = 0;
 
-void pinSetup();
+// Parâmetros da roda
+float wheelDiameter = 6.0; // Diâmetro da roda em cm
+float wheelCircumference = PI * wheelDiameter; // Circunferência em cm
+float distancePerPulse = wheelCircumference / pulsesPerRevolution; // Distância por pulso em cm
+float totalDistance = 0; // Distância total percorrida em cm
 
-void setup()
-{
-  Serial.begin(115200);
-  pinSetup();
-  // Conecta ao Wi-Fi
-  Serial.print("Conectando ao Wi-Fi");
-  WiFi.begin(ssid, password);
-  while (WiFi.status() != WL_CONNECTED)
-  {
-    delay(1000);
-    Serial.print(".");
-  }
-  Serial.println("\nConectado ao Wi-Fi!");
-  Serial.println(WiFi.localIP());
+void setup() {
+  // Configura os pinos do encoder como entrada
+  pinMode(ENCODER_A, INPUT);
+  pinMode(ENCODER_B, INPUT);
 
-  // Conecta ao servidor
-  Serial.print("Conectando ao servidor...");
-  while (!client.connect(serverIP, serverPort))
-  {
-    delay(1000);
-    Serial.print(".");
-  }
-  Serial.println("\nConectado ao servidor!");
+  // Configura os pinos da ponte H como saída
+  pinMode(IN1, OUTPUT);
+  pinMode(IN2, OUTPUT);
+
+  // Configura a interrupção para o encoder
+  attachInterrupt(digitalPinToInterrupt(ENCODER_A), encoderISR, RISING);
+
+  // Inicia a comunicação serial
+  Serial.begin(9600);
 }
 
-void loop()
-{
-  static unsigned long lastMillis = 0;
+void loop() {
+  // Calcula a RPM
+  unsigned long currentTime = millis();
+  unsigned long timeElapsed = currentTime - lastTime;
 
-  // Envia mensagem ao servidor a cada 5 segundos
-  if (millis() - lastMillis >= 1000)
-  {
-    lastMillis = millis();
-    client.println("Esperando comando...");
+  if (timeElapsed >= 1000) { // Atualiza a cada segundo
+    rpm = (float)(pulseCount * 60) / (float)pulsesPerRevolution;
+    totalDistance += pulseCount * distancePerPulse; // Atualiza a distância total
+    pulseCount = 0;
+    lastTime = currentTime;
+
+    // Exibe a RPM e a distância no monitor serial
+    Serial.print("RPM: ");
+    Serial.print(rpm);
+    Serial.print(" | Distância total: ");
+    Serial.print(totalDistance);
+    Serial.println(" cm");
   }
 
-  // Verifica se há dados disponíveis do servidor
-  if (client.available())
-  {
-    digitalWrite(14, HIGH); // Conectado
-    String resposta = client.readStringUntil('\n');
-    Serial.println("Comando recebido: " + resposta);
-
-    // Processa o comando recebido (exemplo)
-    if (resposta == "F")
-    {
-      Serial.println("Comando: Avançar!");
-      // Lógica para avançar o robô
-      digitalWrite(32, HIGH);
-      digitalWrite(33, HIGH);
-      digitalWrite(34, LOW);
-      digitalWrite(35, LOW);
-    }
-    else if (resposta == "T")
-    {
-      Serial.println("Comando: Parar!");
-      // Lógica para parar o robô
-      digitalWrite(33, LOW);
-      digitalWrite(32, LOW);
-      digitalWrite(34, LOW);
-      digitalWrite(35, LOW);
-    }
-    else if (resposta == "D")
-    {
-      Serial.println("Comando: Horário");
-      // Lógica para ré do robô
-      digitalWrite(32, HIGH);
-      digitalWrite(33, LOW);
-      digitalWrite(34, HIGH);
-      digitalWrite(35, LOW);
-    }
-    else if (resposta == "E")
-    {
-      Serial.println("Comando: Anti-horario");
-      // Lógica para direita do robô
-      digitalWrite(32, LOW);
-      digitalWrite(33, HIGH);
-      digitalWrite(34, LOW);
-      digitalWrite(35, HIGH);
-    }
-    else
-    {
-      Serial.println("Comando inválido!");
-    }
-  }
+  // Exemplo de controle do motor
+  digitalWrite(IN1, HIGH);
+  digitalWrite(IN2, LOW);
 }
 
-void pinSetup()
-{
-  pinMode(32, OUTPUT);
-  pinMode(33, OUTPUT);
-  pinMode(34, OUTPUT);
-  pinMode(35, OUTPUT);
-  pinMode(14, OUTPUT);
+// Função de interrupção para o encoder
+void encoderISR() {
+  pulseCount++;
 }
