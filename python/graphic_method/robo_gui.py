@@ -82,6 +82,14 @@ class RoboGUI:
         self.btn_limpar_memoria = ttk.Button(self.frame_controles_lateral, text="Limpar Memória", command=self.limpar_memoria)
         self.btn_limpar_memoria.grid(row=4, column=1)
 
+        # Configuração de tempo de espera
+        self.label_wait = ttk.Label(self.frame_controles_lateral, text="Tempo de Espera (s):")
+        self.label_wait.grid(row=6, column=0, pady=5)
+
+        self.spin_wait = ttk.Spinbox(self.frame_controles_lateral, from_=1, to=30, width=5)
+        self.spin_wait.grid(row=6, column=1, pady=5)
+        self.spin_wait.set(1)  # Valor padrão
+
         # Exibir coordenada atual do robô
         self.label_coordenadas = ttk.Label(self.frame_controles_lateral, text=f"Coordenadas: ({self.estado_robo[0]}, {self.estado_robo[1]})")
         self.label_coordenadas.grid(row=5, column=0, columnspan=3, pady=10)
@@ -139,8 +147,7 @@ class RoboGUI:
 
     def enviar_comando_mqtt(self, comando):
         if comando.startswith("W"):  # Comando de espera
-            segundos = int(comando[1:])
-            esperar_tempo(segundos)
+            self.mover_robo(comando)  # Use the new method with Spinbox
         else:
             self.mqtt_client.publish(comando)
             print(f"Comando enviado: {comando}")
@@ -160,6 +167,15 @@ class RoboGUI:
 
     def mover_robo(self, comando):
         linha, coluna, orientacao, passos = self.estado_robo
+
+        if comando.startswith("W"):  # Comando de Espera
+            segundos = int(self.spin_wait.get())  # Get time from GUI spinbox
+            self.label_coordenadas.config(text=f"Esperando {segundos} segundos...")
+
+            # Pause without freezing the interface
+            self.root.after(segundos * 1000, lambda: self.label_coordenadas.config(
+                text=f"Coordenadas: ({linha}, {coluna})"))
+            return  # Don't continue movement if it's a waiting command
 
         # Verificar sensores
         sensores = verificar_sensores(self.matriz, linha, coluna, orientacao)
