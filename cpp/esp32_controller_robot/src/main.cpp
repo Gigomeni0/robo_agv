@@ -1,12 +1,17 @@
 #include <Arduino.h>
-
+#include <BluetoothSerial.h>
 // Pinos do enco
-#define ENCODER_A 2
-#define ENCODER_B 3
+#define ENCODER_A 4
+#define ENCODER_B 5
+#define ENCODER_A2 6
+#define ENCODER_B2 7
 
 // Pinos da ponte H
-#define IN1 4
-#define IN2 5
+#define IN1 15
+#define IN2 16
+#define IN3 17
+#define IN4 18
+
 
 // Variáveis para o encoder
 volatile long pulseCount = 0;
@@ -15,12 +20,16 @@ float rpm = 0;
 unsigned long lastTime = 0;
 
 // Parâmetros da roda
-float wheelDiameter = 6.0; // Diâmetro da roda em cm
-float wheelCircumference = PI * wheelDiameter; // Circunferência em cm
+float wheelDiameter = 12;                                          // Diâmetro da roda em cm
+float wheelCircumference = PI * wheelDiameter;                     // Circunferência em cm
 float distancePerPulse = wheelCircumference / pulsesPerRevolution; // Distância por pulso em cm
-float totalDistance = 0; // Distância total percorrida em cm
+float totalDistance = 0;                                           // Distância total percorrida em cm
 
-void setup() {
+// Função de interrupção para o encoder
+void encoderISR();
+
+void setup()
+{
   // Configura os pinos do encoder como entrada
   pinMode(ENCODER_A, INPUT);
   pinMode(ENCODER_B, INPUT);
@@ -34,14 +43,19 @@ void setup() {
 
   // Inicia a comunicação serial
   Serial.begin(9600);
+
+  digitalWrite(IN1, HIGH);
+  digitalWrite(IN2, LOW);
 }
 
-void loop() {
+void loop()
+{
   // Calcula a RPM
   unsigned long currentTime = millis();
   unsigned long timeElapsed = currentTime - lastTime;
 
-  if (timeElapsed >= 1000) { // Atualiza a cada segundo
+  if (timeElapsed >= 1000)
+  { // Atualiza a cada segundo
     rpm = (float)(pulseCount * 60) / (float)pulsesPerRevolution;
     totalDistance += pulseCount * distancePerPulse; // Atualiza a distância total
     pulseCount = 0;
@@ -58,9 +72,12 @@ void loop() {
   // Exemplo de controle do motor
   digitalWrite(IN1, HIGH);
   digitalWrite(IN2, LOW);
+  digitalWrite(IN3, HIGH);
+  digitalWrite(IN4, LOW);
 }
 
 // Função de interrupção para o encoder
-void encoderISR() {
+void encoderISR()
+{
   pulseCount++;
 }
