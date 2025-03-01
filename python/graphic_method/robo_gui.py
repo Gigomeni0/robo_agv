@@ -90,9 +90,20 @@ class RoboGUI:
         self.spin_wait.grid(row=6, column=1, pady=5)
         self.spin_wait.set(1)  # Valor padrão
 
+        self.btn_pausa = ttk.Button(self.frame_controles_lateral, text="Inserir Pausa", command=self.inserir_pausa)
+        self.btn_pausa.grid(row=3, column=0, pady=5)    
+
         # Exibir coordenada atual do robô
         self.label_coordenadas = ttk.Label(self.frame_controles_lateral, text=f"Coordenadas: ({self.estado_robo[0]}, {self.estado_robo[1]})")
         self.label_coordenadas.grid(row=5, column=0, columnspan=3, pady=10)
+
+        # Comandos da rota
+        self.label_comandos = ttk.Label(self.frame_controles_lateral, text="Comandos da Rota:")
+        self.label_comandos.grid(row=7, column=0, columnspan=3, pady=5)
+
+        self.lista_comandos = tk.Listbox(self.frame_controles_lateral, height=10)
+        self.lista_comandos.grid(row=8, column=0, columnspan=3, pady=5)
+
 
         # Lista de rotas salvas
         self.lista_rotas = tk.Listbox(self.frame_rotas)
@@ -146,13 +157,15 @@ class RoboGUI:
         print(f"Mensagem recebida: {msg.topic} {msg.payload.decode()}")
 
     def enviar_comando_mqtt(self, comando):
-        if comando.startswith("W"):  # Comando de espera
-            self.mover_robo(comando)  # Use the new method with Spinbox
+        if comando.startswith("W"):
+            self.mover_robo(comando)  # Use the new pause system
         else:
             self.mqtt_client.publish(comando)
-            print(f"Comando enviado: {comando}")
-            self.mover_robo(comando)  # Atualizar a visualização do robô no mapa
+            self.mover_robo(comando)
+        self.lista_comandos.insert(tk.END, f"[{comando}]")  # Insert command in the list
+        print(f"Comando enviado: {comando}")
 
+ 
     def carregar_ultima_posicao(self):
         caminho_arquivo = "python/graphic_method/position.json"
         if os.path.exists(caminho_arquivo):
@@ -212,7 +225,9 @@ class RoboGUI:
 
     def iniciar_gravacao(self):
         self.comandos = []
+        self.lista_comandos.delete(0, tk.END)  # Clear the list
         print("Gravação de rota iniciada.")
+
 
     def salvar_rota(self):
         caminho_arquivo = "python/graphic_method/rotas_salvas.json"
@@ -255,6 +270,14 @@ class RoboGUI:
         with open(caminho_arquivo, "w") as f:
             json.dump(dados, f, indent=4)
         print(f"Coordenadas salvas em {caminho_arquivo}")
+
+    def inserir_pausa(self):
+        segundos = int(self.spin_wait.get())  # Get time from spinbox
+        comando = f"W{segundos}"  # Create the command like "W5" for 5 seconds
+        self.comandos.append(comando)  # Add to command list
+        self.label_coordenadas.config(text=f"Pausa de {segundos} segundos inserida")
+        self.lista_comandos.insert(tk.END, f"[{comando}]")  # Add to command listbox
+        print(f"Pausa de {segundos} segundos inserida na rota.")  # Show in console
 
     def carregar_rotas(self):
         caminho_arquivo = "python/graphic_method/rotas_salvas.json"
@@ -357,6 +380,12 @@ class RoboGUI:
 
     def retornar_inicio(self):
         comandos_retorno = inverter_comandos(self.comandos, self.estado_robo[2])
+        
+        for comando in comandos_retorno:
+            self.lista_comandos.insert(tk.END, f"[{comando}]")  # Show each command in the list
+            self.lista_comandos.yview(tk.END)  # Scroll the list automatically
+        
+        print("Executando retorno ao início...")
         self.executar_comandos(comandos_retorno)
 
     def limpar_memoria(self):
@@ -377,6 +406,8 @@ class RoboGUI:
         print("Memória limpa e robô reposicionado.")
 
     def on_closing(self):
-        self.mqtt_client.disconnect()
-        self.root.destroy()
-        print("Janela fechada e programa finalizado.")
+        if tk.messagebox.askokcancel("Sair", "Tem certeza que deseja fechar o programa?"):
+            self.mqtt_client.disconnect()
+            self.root.destroy()
+            self.root.quit()  # Stop all Tkinter threads
+            print("Janela fechada e programa finalizado.")
