@@ -1,5 +1,8 @@
 #include <Arduino.h>
 #include <BluetoothSerial.h>
+#include <PubSubClient.h>
+#include <WiFi.h>
+
 // Pinos do enco
 #define ENCODER_A 4
 #define ENCODER_B 5
@@ -25,11 +28,28 @@ float wheelCircumference = PI * wheelDiameter;                     // Circunfer�
 float distancePerPulse = wheelCircumference / pulsesPerRevolution; // Distância por pulso em cm
 float totalDistance = 0;                                           // Distância total percorrida em cm
 
+//============================== Funções do programa ==========================================
 // Função de interrupção para o encoder
-void encoderISR();
+void encoderISR()
+{
+  pulseCount++;
+}
+
+// Função para conectar-se a uma rede Wi-Fi
+void connect(String SSID, String password)
+{
+  WiFi.begin(SSID.c_str(), password.c_str());
+  while (WiFi.status() != WL_CONNECTED)
+  {
+    delay(1000);
+    Serial.println("Conectando à rede Wi-Fi...");
+  }
+  Serial.println("Conectado à rede Wi-Fi!");
+}
 
 void setup()
 {
+  connect("Gigo2.4G", "18253122Ro");
   // Configura os pinos do encoder como entrada
   pinMode(ENCODER_A, INPUT);
   pinMode(ENCODER_B, INPUT);
@@ -76,8 +96,3 @@ void loop()
   digitalWrite(IN4, LOW);
 }
 
-// Função de interrupção para o encoder
-void encoderISR()
-{
-  pulseCount++;
-}
