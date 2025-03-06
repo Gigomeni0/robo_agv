@@ -4,7 +4,7 @@ import tkinter as tk
 from tkinter import ttk
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
-from utils import verificar_sensores, desenhar_ambiente, inverter_comandos, esperar_tempo
+from utils import verificar_sensores, desenhar_ambiente, inverter_comandos
 from mqtt_config import MQTTClient
 
 class RoboGUI:
@@ -13,7 +13,7 @@ class RoboGUI:
         self.root.title("Controle Manual do Robô")
 
         # Configurações MQTT
-        self.mqtt_broker = "localhost"  # Usar o broker MQTT local
+        self.mqtt_broker = "test.mosquitto.org"  # Usar o broker de teste do mosquitto.org
         self.mqtt_port = 1883
         self.mqtt_topic = "robo_gaveteiro/comandos"
 
@@ -157,6 +157,7 @@ class RoboGUI:
         print(f"Mensagem recebida: {msg.topic} {msg.payload.decode()}")
 
     def enviar_comando_mqtt(self, comando):
+        
         if comando.startswith("W"):
             self.mover_robo(comando)  # Use the new pause system
         else:

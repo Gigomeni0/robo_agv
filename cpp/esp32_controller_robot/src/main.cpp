@@ -51,14 +51,14 @@ void callback(char* topic, byte* payload, unsigned int length) {
   Serial.print("Mensagem: ");
   Serial.println(message);
 
-  if (message == "ligar") {
+  if (message == "F") {
     Serial.println("Ligando motores...");
     digitalWrite(IN1, HIGH);
     digitalWrite(IN2, LOW);
     digitalWrite(IN3, HIGH);
     digitalWrite(IN4, LOW);
   } 
-  else if (message == "desligar") {
+  else if (message == "B") {
     Serial.println("Desligando motores...");
     digitalWrite(IN1, LOW);
     digitalWrite(IN2, LOW);
@@ -112,6 +112,7 @@ void setup() {
   pinMode(IN4, OUTPUT);
 
   attachInterrupt(digitalPinToInterrupt(ENCODER_A), encoderISR, RISING);
+  attachInterrupt(digitalPinToInterrupt(ENCODER_B), encoderISR, RISING);
 
   digitalWrite(IN1, LOW);
   digitalWrite(IN2, LOW);
