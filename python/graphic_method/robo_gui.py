@@ -104,6 +104,12 @@ class RoboGUI:
         self.lista_comandos = tk.Listbox(self.frame_controles_lateral, height=10)
         self.lista_comandos.grid(row=8, column=0, columnspan=3, pady=5)
 
+        self.label_estado = ttk.Label(self.frame_controles_lateral, text="📡 Estado: Desconhecido")
+        self.label_estado.grid(row=10, column=0, columnspan=3, pady=5)
+
+        self.label_bateria = ttk.Label(self.frame_controles_lateral, text="🔋 Bateria: --%")
+        self.label_bateria.grid(row=11, column=0, columnspan=3, pady=5)
+
 
         # Lista de rotas salvas
         self.lista_rotas = tk.Listbox(self.frame_rotas)
@@ -154,7 +160,48 @@ class RoboGUI:
         self.carregar_rotas()
 
     def on_mqtt_message(self, client, userdata, msg):
-        print(f"Mensagem recebida: {msg.topic} {msg.payload.decode()}")
+        mensagem = msg.payload.decode()
+        print(f"📡 Mensagem recebida: {msg.topic} {mensagem}")
+
+        try:
+            data = json.loads(mensagem)
+
+            # SE O STATUS VEIO DO ROBÔ
+            if msg.topic == "robo_gaveteiro/status":
+                # Atualizar status do robô na interface
+                self.atualizar_status_robo(data)
+
+            # SE O ROBÔ DETECTOU UM OBSTÁCULO
+            elif "obstaculo" in data:
+                coordenadas = data["obstaculo"]
+                linha, coluna = map(int, coordenadas.strip("()").split(","))
+
+                # Atualizar o mapa
+                self.matriz[linha][coluna] = 1
+                desenhar_ambiente(self.ax, self.canvas, self.matriz, self.estado_robo[:2])
+
+                # Exibir alerta na interface
+                self.label_coordenadas.config(text=f"⚠️ Obstáculo detectado em {coordenadas}")
+
+                print("⚠️ Execução pausada devido a um obstáculo!")
+                return  # Não continua a rota até o usuário decidir
+
+        except json.JSONDecodeError:
+            print("❌ Erro ao interpretar mensagem MQTT.")
+
+    def atualizar_status_robo(self, status):
+        # Se o JSON recebido tiver posição do robô
+        if "posicao" in status:
+            linha, coluna = status["posicao"]
+            self.label_coordenadas.config(text=f"📍 Robô em ({linha}, {coluna})")
+
+        # Se tiver um estado atual (movendo, parado, erro, etc.)
+        if "estado" in status:
+            self.label_estado.config(text=f"📡 Estado: {status['estado']}")
+
+        # Se tiver nível de bateria 🔋
+        if "bateria" in status:
+            self.label_bateria.config(text=f"🔋 Bateria: {status['bateria']}%")
 
     def enviar_comando_mqtt(self, comando):
         
@@ -311,17 +358,25 @@ class RoboGUI:
         if selecionado:
             rota_nome = self.lista_rotas.get(selecionado)
             caminho_arquivo = "python/graphic_method/rotas_salvas.json"
+
             with open(caminho_arquivo, "r") as f:
                 dados = json.load(f)
+
             for r in dados:
                 if r["nome"] == rota_nome:
                     comandos = r["comandos"]
                     break
-            # Verificar se o robô está na posição inicial
-            if self.estado_robo[:2] == (self.linhas // 2, self.colunas // 2):
-                self.executar_comandos(comandos)
-            else:
-                print("O robô não está na posição inicial. Não é possível executar a rota.")
+
+            # Criar JSON com a rota completa
+            payload = json.dumps({
+                "rota": comandos, 
+                "id": "robo_01"  # ID opcional para identificar o robô
+            })
+
+            # Enviar para o ESP32 via MQTT
+            self.mqtt_client.publish("robo_gaveteiro/comandos", payload)
+            print(f"📡 Rota enviada para o robô: {rota_nome}")
+            print(f"📜 JSON Enviado: {payload}")
 
     def executar_comandos(self, comandos):
         if comandos:
