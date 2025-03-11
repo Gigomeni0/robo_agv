@@ -1,5 +1,5 @@
 import json
-from utils import verificar_sensores, desenhar_ambiente, inverter_comandos
+from utils import verificar_sensores, inverter_comandos
 
 class RoboController:
     def __init__(self, matriz, estado_robo):
@@ -49,3 +49,8 @@ class RoboController:
 
     def inverter_rota(self):
         return inverter_comandos(self.comandos, self.estado_robo[2])
+    
+    def get_orientacao_final(self):
+        """Retorna a orientação final após a execução da rota."""
+        return self.estado_robo[2]
+
