@@ -3,50 +3,39 @@ import matplotlib.pyplot as plt
 import time
 
 def verificar_sensores(matriz, linha, coluna, orientacao):
-    sensores = [1, 1, 1]  # Inicialmente assume que todos os lados têm obstáculos
+    deslocamentos = {
+        "N": [(-1, 0), (0, -1), (0, 1)],  # Frente, Esquerda, Direita
+        "E": [(0, 1), (-1, 0), (1, 0)],
+        "S": [(1, 0), (0, 1), (0, -1)],
+        "W": [(0, -1), (1, 0), (-1, 0)]
+    }
 
-    # Verificar posição à frente
-    if orientacao == "N" and linha > 0:
-        sensores[0] = matriz[linha - 1][coluna]  # Frontal
-    elif orientacao == "E" and coluna < len(matriz[0]) - 1:
-        sensores[0] = matriz[linha][coluna + 1]
-    elif orientacao == "S" and linha < len(matriz) - 1:
-        sensores[0] = matriz[linha + 1][coluna]
-    elif orientacao == "W" and coluna > 0:
-        sensores[0] = matriz[linha][coluna - 1]
+    sensores = []
+    for dx, dy in deslocamentos[orientacao]:
+        nova_linha, nova_coluna = linha + dx, coluna + dy
+        if 0 <= nova_linha < len(matriz) and 0 <= nova_coluna < len(matriz[0]):
+            sensores.append(1 - matriz[nova_linha][nova_coluna])  # 1 = livre, 0 = obstáculo
+        else:
+            sensores.append(0)  # Fora dos limites é sempre obstáculo
 
-    # Verificar posição à esquerda
-    if orientacao == "N" and coluna > 0:
-        sensores[1] = matriz[linha][coluna - 1]  # Esquerda
-    elif orientacao == "E" and linha > 0:
-        sensores[1] = matriz[linha - 1][coluna]
-    elif orientacao == "S" and coluna < len(matriz[0]) - 1:
-        sensores[1] = matriz[linha][coluna + 1]
-    elif orientacao == "W" and linha < len(matriz) - 1:
-        sensores[1] = matriz[linha + 1][coluna]
-
-    # Verificar posição à direita
-    if orientacao == "N" and coluna < len(matriz[0]) - 1:
-        sensores[2] = matriz[linha][coluna + 1]  # Direita
-    elif orientacao == "E" and linha < len(matriz) - 1:
-        sensores[2] = matriz[linha + 1][coluna]
-    elif orientacao == "S" and coluna > 0:
-        sensores[2] = matriz[linha][coluna - 1]
-    elif orientacao == "W" and linha > 0:
-        sensores[2] = matriz[linha - 1][coluna]
-
-    return [1 - s for s in sensores]  # Inverter valores (1 = parede, 0 = livre)
+    return sensores
 
 def desenhar_ambiente(ax, canvas, matriz, posicao_robo):
     ax.clear()
     ax.imshow(matriz, cmap="Greys", origin="upper")
-    ax.scatter(posicao_robo[1], posicao_robo[0], color="red", label="Robô")
+
+    # Exibir o robô com um ícone vermelho
+    ax.scatter(posicao_robo[1], posicao_robo[0], color="red", marker="o", s=100, label="Robô")
+
+    # Configuração do gráfico
     ax.set_title("Ambiente e Movimentação do Robô")
     ax.legend()
     ax.grid(True, which='both', color='lightgray', linewidth=0.5)
     ax.set_xticks(range(len(matriz[0])))
     ax.set_yticks(range(len(matriz)))
+    
     canvas.draw()
+
 
 def inverter_comandos(comandos, orientacao_atual):
     orientacoes = ["N", "E", "S", "W"]
