@@ -1,4 +1,5 @@
 import json
+import os
 from utils import verificar_sensores, inverter_comandos
 
 class RoboController:
