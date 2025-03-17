@@ -20,22 +20,42 @@ def verificar_sensores(matriz, linha, coluna, orientacao):
 
     return sensores
 
+
 def desenhar_ambiente(ax, canvas, matriz, posicao_robo):
     ax.clear()
-    ax.imshow(matriz, cmap="Greys", origin="upper")
+    linhas, colunas = len(matriz), len(matriz[0])
 
-    # Exibir o robô com um ícone vermelho
-    ax.scatter(posicao_robo[1], posicao_robo[0], color="red", marker="o", s=100, label="Robô")
+    # Desenhar o grid
+    for i in range(linhas):
+        for j in range(colunas):
+            if matriz[i][j] == 1:
+                ax.add_patch(plt.Rectangle((j, linhas - i - 1), 1, 1, color='black'))
 
-    # Configuração do gráfico
-    ax.set_title("Ambiente e Movimentação do Robô")
-    ax.legend()
-    ax.grid(True, which='both', color='lightgray', linewidth=0.5)
-    ax.set_xticks(range(len(matriz[0])))
-    ax.set_yticks(range(len(matriz)))
-    
+    # Desenhar o robô
+    x, y = posicao_robo
+    ax.add_patch(plt.Circle((y, linhas - x - 1), 0.5, color='blue'))
+
+    # Configurar os limites dos eixos
+    ax.set_xlim(-1, colunas)
+    ax.set_ylim(-1, linhas)
+
+    # Configurar os rótulos dos eixos
+    ax.set_xticks(range(colunas))
+    ax.set_yticks(range(linhas))
+    ax.set_xlabel('X')
+    ax.set_ylabel('Y')
+
+    # Remover as legendas das marcações dos números
+    ax.set_xticklabels([])
+    ax.set_yticklabels([])
+
+    # Adicionar linhas de grade
+    ax.grid(True)
+
+    # Inverter o eixo Y para que a origem (0,0) esteja no canto inferior esquerdo
+    ax.invert_yaxis()
+
     canvas.draw()
-
 
 def inverter_comandos(comandos, orientacao_atual):
     orientacoes = ["N", "E", "S", "W"]

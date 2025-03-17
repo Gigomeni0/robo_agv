@@ -30,6 +30,28 @@ class RoboController:
         self.comandos.append(comando)
         return self.estado_robo
 
+    def simular_movimento(self, comandos):
+        """Simula a execução dos comandos e retorna a posição final do robô."""
+        linha, coluna, orientacao, _ = self.estado_robo
+        
+        for comando in comandos:
+            if comando == "F":
+                if orientacao == "N":
+                    linha -= 1
+                elif orientacao == "E":
+                    coluna += 1
+                elif orientacao == "S":
+                    linha += 1
+                elif orientacao == "W":
+                    coluna -= 1
+            elif comando == "E":
+                orientacao = {"N": "W", "W": "S", "S": "E", "E": "N"}[orientacao]
+            elif comando == "D":
+                orientacao = {"N": "E", "E": "S", "S": "W", "W": "N"}[orientacao]
+                
+        return (linha, coluna)
+
+
     def iniciar_gravacao(self):
         self.comandos = []
 
@@ -38,11 +60,19 @@ class RoboController:
         with open(caminho_arquivo, "w") as f:
             json.dump(rota, f, indent=4)
 
-    def carregar_rotas(self, caminho_arquivo):
-        if not os.path.exists(caminho_arquivo):
+
+    def carregar_rotas(self, rota_nome):
+            caminho_arquivo = os.path.join(os.path.dirname(__file__), "rotas_salvas.json")
+            if os.path.exists(caminho_arquivo):
+                with open(caminho_arquivo, "r") as f:
+                    try:
+                        dados = json.load(f)
+                        for rota in dados:
+                            if rota["nome"] == rota_nome:
+                                return rota["comandos"]
+                    except json.JSONDecodeError:
+                        print("Erro ao decodificar o arquivo JSON.")
             return []
-        with open(caminho_arquivo, "r") as f:
-            return json.load(f)
 
     def executar_comandos(self, comandos):
         for comando in comandos:

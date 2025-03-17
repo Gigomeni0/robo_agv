@@ -14,8 +14,8 @@ class RoboGUI:
         self.root.title("Controle Manual do Robô")
 
         # Criando a matriz do ambiente (10x10)
-        self.matriz = [[0] * 10 for _ in range(10)]
-        self.estado_robo = (5, 5, "N", 0)  # Posição inicial
+        self.matriz = [[0] * 30 for _ in range(30)]
+        self.estado_robo = self.carregar_ultima_posicao()  # Posição inicial
 
         # Criar controlador do robô
         self.robo_controller = RoboController(self.matriz, self.estado_robo)
@@ -96,11 +96,43 @@ class RoboGUI:
 
         # Capturar evento de fechamento
         self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
-    
+
+        # Carregar rotas salvas
+        self.carregar_rotas_salvas()
+
+    def carregar_ultima_posicao(self):
+        """Carrega a última posição do robô a partir do arquivo JSON."""
+        caminho_arquivo = os.path.join(os.path.dirname(__file__), "position.json")
+        if os.path.exists(caminho_arquivo):
+            with open(caminho_arquivo, "r") as f:
+                try:
+                    dados = json.load(f)
+                    return (dados["linha"], dados["coluna"], dados["orientacao"], dados["passos"])
+                except json.JSONDecodeError:
+                    pass
+        # Se o arquivo não existir ou houver um erro, inicializar no centro, virado para o norte
+        return (self.linhas // 2, self.colunas // 2, "N", 0)
+
+    def salvar_posicao_atual(self):
+        """Salva a posição atual do robô no arquivo JSON."""
+        caminho_arquivo = os.path.join(os.path.dirname(__file__), "position.json")
+        dados = {
+            "linha": self.estado_robo[0],
+            "coluna": self.estado_robo[1],
+            "orientacao": self.estado_robo[2],
+            "passos": self.estado_robo[3]
+        }
+        with open(caminho_arquivo, "w") as f:
+            json.dump(dados, f, indent=4)
+
+
     def enviar_comando(self, comando):
         self.mqtt_client.publish("robo_gaveteiro/comandos", comando)
         self.lista_comandos.insert(tk.END, f"[{comando}]")
         self.estado_robo = self.robo_controller.mover_robo(comando)
+
+        # Salvar a posição atual do robô
+        self.salvar_posicao_atual()
         self.atualizar_interface()
     
     def atualizar_interface(self):
@@ -139,16 +171,9 @@ class RoboGUI:
             print("⚠️ Nenhum comando gravado para salvar.")
             return
 
-        rota_nome = f"Rota {len(self.lista_rotas.get(0, tk.END)) + 1}"
-        rota = {
-            "nome": rota_nome,
-            "comandos": self.robo_controller.comandos,
-            "orientacao_inicial": self.estado_robo[2],  # Orientação no começo
-            "orientacao_final": self.robo_controller.get_orientacao_final()  # Orientação no final
-        }
+        caminho_arquivo = os.path.join(os.path.dirname(__file__), "rotas_salvas.json")
 
-        caminho_arquivo = "rotas_salvas.json"
-        
+        # Carregar as rotas já existentes no arquivo JSON
         if os.path.exists(caminho_arquivo):
             with open(caminho_arquivo, "r") as f:
                 try:
@@ -158,22 +183,62 @@ class RoboGUI:
         else:
             dados = []
 
+        # Contar quantas rotas já existem no arquivo JSON
+        total_rotas_salvas = len(dados)
+
+        # Criar o nome da nova rota
+        rota_nome = f"Rota {total_rotas_salvas + 1}"
+
+        rota = {
+            "nome": rota_nome,
+            "comandos": self.robo_controller.comandos,
+            "orientacao_inicial": self.estado_robo[2],  # Orientação no começo
+            "orientacao_final": self.robo_controller.get_orientacao_final()  # Orientação no final
+        }
+
+        # Adiciona a nova rota à lista de rotas salvas
         dados.append(rota)
 
+        # Salva o arquivo atualizado
         with open(caminho_arquivo, "w") as f:
             json.dump(dados, f, indent=4)
 
-        self.lista_rotas.insert(tk.END, rota_nome)  # Atualiza a lista na interface
+        # Atualiza a lista na interface
+        self.lista_rotas.insert(tk.END, rota_nome)
         print(f"💾 Rota salva: {rota_nome} (Orientação inicial: {rota['orientacao_inicial']}, final: {rota['orientacao_final']})")
 
+    def carregar_rotas_salvas(self):
+        """Carrega as rotas do arquivo JSON para a interface gráfica."""
+        caminho_arquivo = os.path.join(os.path.dirname(__file__), "rotas_salvas.json")
+        print(f"Carregando rotas salvas do arquivo: {caminho_arquivo}")
+
+        if os.path.exists(caminho_arquivo):
+            with open(caminho_arquivo, "r") as f:
+                try:
+                    dados = json.load(f)
+                except json.JSONDecodeError:
+                    dados = []
+                    print("Erro ao decodificar o arquivo JSON.")
+        else:
+            dados = []
+            print("Arquivo de rotas salvas não encontrado.")
+
+        # Adiciona cada rota à interface gráfica
+        for rota in dados:
+            self.lista_rotas.insert(tk.END, rota["nome"])
 
     def executar_rota(self):
         selecionado = self.lista_rotas.curselection()
         if selecionado:
             rota_nome = self.lista_rotas.get(selecionado)
-            comandos = self.robo_controller.carregar_rota(rota_nome)
+            print(f"🔄 Executando rota: {rota_nome}")
+            comandos = self.robo_controller.carregar_rotas(rota_nome)
+            print(f"📜 Comandos carregados: {comandos}")
             for comando in comandos:
+                print(f"🚀 Enviando comando: {comando}")
                 self.enviar_comando(comando)
+        else:
+            print("⚠️ Nenhuma rota selecionada.")
     
     def on_mqtt_message(self, client, userdata, msg):
         payload = msg.payload.decode()

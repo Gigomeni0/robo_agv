@@ -5,8 +5,8 @@
 #define IN1 6
 #define IN2 7
 #define ENA 14  // PWM Motor 1
-#define IN3 41
-#define IN4 40
+#define IN3 15
+#define IN4 16
 #define ENB 19  // PWM Motor 2
 
 // Encoders (Motores com encoder A/B)
