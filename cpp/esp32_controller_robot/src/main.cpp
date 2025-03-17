@@ -22,21 +22,32 @@ const char* topico = "robo_gaveteiro/comandos";
 #define IN3 17
 #define IN4 18
 
-// Variáveis do encoder
-volatile long pulseCount = 0;
-int pulsesPerRevolution = 11;
-float rpm = 0;
-unsigned long lastTime = 0;
+// Variáveis do encoder 1
+volatile long pulseCount1 = 0;
+int pulsesPerRevolution1 = 11;
+float rpm1 = 0;
+unsigned long lastTime1 = 0;
+
+// Variáveis do encoder 2
+volatile long pulseCount2 = 0;
+int pulsesPerRevolution2 = 11;
+float rpm2 = 0;
+unsigned long lastTime2 = 0;
 
 // Parâmetros da roda
 float wheelDiameter = 12;                                          // Diâmetro da roda em cm
 float wheelCircumference = PI * wheelDiameter;                     // Circunferência
-float distancePerPulse = wheelCircumference / pulsesPerRevolution; // Distância por pulso
-float totalDistance = 0;
+float distancePerPulse = wheelCircumference / pulsesPerRevolution1; // Distância por pulso
+float totalDistance1 = 0;
+float totalDistance2 = 0;
 
-// Função de interrupção do encoder
-void encoderISR() {
-  pulseCount++;
+// Funções de interrupção do encoder
+void encoderISR1() {
+  pulseCount1++;
+}
+
+void encoderISR2() {
+  pulseCount2++;
 }
 
 void callback(char* topic, byte* payload, unsigned int length) {
@@ -106,13 +117,15 @@ void setup() {
   // Configuração dos pinos
   pinMode(ENCODER_A, INPUT);
   pinMode(ENCODER_B, INPUT);
+  pinMode(ENCODER_A2, INPUT);
+  pinMode(ENCODER_B2, INPUT);
   pinMode(IN1, OUTPUT);
   pinMode(IN2, OUTPUT);
   pinMode(IN3, OUTPUT);
   pinMode(IN4, OUTPUT);
 
-  attachInterrupt(digitalPinToInterrupt(ENCODER_A), encoderISR, RISING);
-  attachInterrupt(digitalPinToInterrupt(ENCODER_B), encoderISR, RISING);
+  attachInterrupt(digitalPinToInterrupt(ENCODER_A), encoderISR1, RISING);
+  attachInterrupt(digitalPinToInterrupt(ENCODER_A2), encoderISR2, RISING);
 
   digitalWrite(IN1, LOW);
   digitalWrite(IN2, LOW);
@@ -128,18 +141,32 @@ void loop() {
   client.loop();  // Mantém a conexão ativa e escuta mensagens
 
   unsigned long currentTime = millis();
-  unsigned long timeElapsed = currentTime - lastTime;
 
-  if (timeElapsed >= 1000) {
-    rpm = (float)(pulseCount * 60) / (float)pulsesPerRevolution;
-    totalDistance += pulseCount * distancePerPulse;
-    pulseCount = 0;
-    lastTime = currentTime;
+  // Cálculos para o encoder 1
+  if (currentTime - lastTime1 >= 1000) {
+    rpm1 = (float)(pulseCount1 * 60) / (float)pulsesPerRevolution1;
+    totalDistance1 += pulseCount1 * distancePerPulse;
+    pulseCount1 = 0;
+    lastTime1 = currentTime;
 
-    Serial.print("RPM: ");
-    Serial.print(rpm);
+    Serial.print("Encoder 1 - RPM: ");
+    Serial.print(rpm1);
     Serial.print(" | Distância total: ");
-    Serial.print(totalDistance);
+    Serial.print(totalDistance1);
+    Serial.println(" cm");
+  }
+
+  // Cálculos para o encoder 2
+  if (currentTime - lastTime2 >= 1000) {
+    rpm2 = (float)(pulseCount2 * 60) / (float)pulsesPerRevolution2;
+    totalDistance2 += pulseCount2 * distancePerPulse;
+    pulseCount2 = 0;
+    lastTime2 = currentTime;
+
+    Serial.print("Encoder 2 - RPM: ");
+    Serial.print(rpm2);
+    Serial.print(" | Distância total: ");
+    Serial.print(totalDistance2);
     Serial.println(" cm");
   }
 }
