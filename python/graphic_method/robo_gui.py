@@ -17,6 +17,9 @@ class RoboGUI:
         self.matriz = [[0] * 30 for _ in range(30)]
         self.estado_robo = self.carregar_ultima_posicao()  # Posição inicial
 
+        # Carregar a base do arquivo JSON
+        self.base = self.carregar_base()
+
         # Criar controlador do robô
         self.robo_controller = RoboController(self.matriz, self.estado_robo)
 
@@ -67,6 +70,14 @@ class RoboGUI:
         self.btn_salvar_rota = ttk.Button(self.frame_controles_lateral, text="Salvar Rota", command=self.salvar_rota)
         self.btn_salvar_rota.grid(row=4, column=2, pady=5)
 
+        # Adicionar botão para definir a base
+        self.btn_definir_base = ttk.Button(self.frame_controles_lateral, text="Definir Base", command=self.definir_base)
+        self.btn_definir_base.grid(row=5, column=0, pady=5)
+
+        # Exibir a base atual
+        self.label_base = ttk.Label(self.frame_controles_lateral, text="Base: Não definida")
+        self.label_base.grid(row=6, column=0, columnspan=3, pady=5)
+
         # Configuração de tempo de espera
         self.label_wait = ttk.Label(self.frame_controles_lateral, text="Tempo de Espera (s):")
         self.label_wait.grid(row=6, column=0, pady=5)
@@ -86,8 +97,10 @@ class RoboGUI:
         self.btn_executar_rota = ttk.Button(self.frame_rotas, text="Executar Rota", command=self.executar_rota)
         self.btn_executar_rota.pack(pady=10)
         
-        # Configurar gráfico
+        # Configurar o layout do gráfico
         self.fig, self.ax = plt.subplots(figsize=(5, 5))
+        self.fig.subplots_adjust(left=0.05, right=0.95, top=0.95, bottom=0.05)  # Reduzir margens
+        self.ax.set_aspect('equal')  # Garantir que o gráfico seja quadrado
         self.canvas = FigureCanvasTkAgg(self.fig, master=self.frame_controles)
         self.canvas.get_tk_widget().pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
 
@@ -113,6 +126,19 @@ class RoboGUI:
         # Se o arquivo não existir ou houver um erro, inicializar no centro, virado para o norte
         return (self.linhas // 2, self.colunas // 2, "N", 0)
 
+    def carregar_base(self):
+        """Carrega a base salva no arquivo JSON."""
+        caminho_arquivo = os.path.join(os.path.dirname(__file__), "positions.json")
+        try:
+            with open(caminho_arquivo, "r") as f:
+                dados = json.load(f)
+                if "base" in dados:
+                    print(f"📂 Base carregada: {dados['base']}")
+                    return dados["base"]
+        except (FileNotFoundError, json.JSONDecodeError):
+            print("⚠️ Nenhuma base encontrada no arquivo JSON.")
+        return None
+    
     def salvar_posicao_atual(self):
         """Salva a posição atual do robô no arquivo JSON."""
         caminho_arquivo = os.path.join(os.path.dirname(__file__), "position.json")
@@ -136,9 +162,9 @@ class RoboGUI:
         self.atualizar_interface()
     
     def atualizar_interface(self):
-        self.label_wait.config(text=f"Posição Atual: {self.estado_robo[:2]}")
-        desenhar_ambiente(self.ax, self.canvas, self.matriz, self.estado_robo[:2])
-    
+        """Atualiza a interface gráfica com a posição atual do robô."""
+        desenhar_ambiente(self.ax, self.canvas, self.matriz, self.estado_robo, getattr(self, "base", None))
+
     def inserir_pausa(self):
         segundos = int(self.spin_wait.get())
         comando = f"W{segundos}"
@@ -169,6 +195,18 @@ class RoboGUI:
         """Salva os comandos gravados, incluindo a orientação inicial e final."""
         if not self.robo_controller.comandos:
             print("⚠️ Nenhum comando gravado para salvar.")
+            return
+
+        # Verificar se a base está definida
+        if not hasattr(self, "base"):
+            print("⚠️ Base não definida. Defina a base antes de salvar uma rota.")
+            return
+
+        # Verificar se o robô está na base
+        if (self.estado_robo[0] != self.base["linha"] or
+            self.estado_robo[1] != self.base["coluna"] or
+            self.estado_robo[2] != self.base["orientacao"]):
+            print("⚠️ O robô não está na base. Não é possível salvar a rota.")
             return
 
         caminho_arquivo = os.path.join(os.path.dirname(__file__), "rotas_salvas.json")
@@ -206,7 +244,7 @@ class RoboGUI:
         # Atualiza a lista na interface
         self.lista_rotas.insert(tk.END, rota_nome)
         print(f"💾 Rota salva: {rota_nome} (Orientação inicial: {rota['orientacao_inicial']}, final: {rota['orientacao_final']})")
-
+   
     def carregar_rotas_salvas(self):
         """Carrega as rotas do arquivo JSON para a interface gráfica."""
         caminho_arquivo = os.path.join(os.path.dirname(__file__), "rotas_salvas.json")
@@ -254,7 +292,32 @@ class RoboGUI:
         elif msg.topic == "robo_gaveteiro/comandos":
             print(f"🔄 Comando recebido: {payload}")
 
-    
+    def definir_base(self):
+        """Define a posição e orientação atual do robô como a base e salva no arquivo JSON."""
+        self.base = {
+            "linha": self.estado_robo[0],
+            "coluna": self.estado_robo[1],
+            "orientacao": self.estado_robo[2]
+        }
+        self.label_base.config(text=f"Base: ({self.base['linha']}, {self.base['coluna']}, {self.base['orientacao']})")
+        print(f"📍 Base definida: {self.base}")
+
+        # Salvar a base no arquivo JSON
+        caminho_arquivo = os.path.join(os.path.dirname(__file__), "positions.json")
+        try:
+            with open(caminho_arquivo, "r") as f:
+                dados = json.load(f)
+        except (FileNotFoundError, json.JSONDecodeError):
+            dados = {}
+
+        dados["base"] = self.base
+
+        with open(caminho_arquivo, "w") as f:
+            json.dump(dados, f, indent=4)
+
+        # Redesenhar o ambiente com a base
+        desenhar_ambiente(self.ax, self.canvas, self.matriz, self.estado_robo, self.base)
+   
     def on_closing(self):
         self.mqtt_client.disconnect()
         self.root.destroy()

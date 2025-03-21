@@ -21,39 +21,38 @@ def verificar_sensores(matriz, linha, coluna, orientacao):
     return sensores
 
 
-def desenhar_ambiente(ax, canvas, matriz, posicao_robo):
+def desenhar_ambiente(ax, canvas, matriz, posicao_robo, base=None):
     ax.clear()
     linhas, colunas = len(matriz), len(matriz[0])
 
     # Desenhar o grid
     for i in range(linhas):
         for j in range(colunas):
-            if matriz[i][j] == 1:
-                ax.add_patch(plt.Rectangle((j, linhas - i - 1), 1, 1, color='black'))
+            ax.add_patch(plt.Rectangle((j, linhas - i - 1), 1, 1, edgecolor='gray', facecolor='none', linewidth=0.5))
+
+    # Desenhar a base, se definida
+    if base:
+        base_x, base_y = base["coluna"], linhas - base["linha"] - 1
+        ax.add_patch(plt.Rectangle((base_x, base_y), 1, 1, color='green', alpha=0.8))
+        ax.text(base_x + 0.5, base_y + 0.5, "B", color="white", ha="center", va="center", fontsize=10)
 
     # Desenhar o robô
-    x, y = posicao_robo
-    ax.add_patch(plt.Circle((y, linhas - x - 1), 0.5, color='blue'))
+    x, y = posicao_robo[:2]
+    ax.add_patch(plt.Rectangle((y, linhas - x - 1), 1, 1, color='blue', alpha=0.8))
 
     # Configurar os limites dos eixos
     ax.set_xlim(-1, colunas)
     ax.set_ylim(-1, linhas)
 
-    # Configurar os rótulos dos eixos
-    ax.set_xticks(range(colunas))
-    ax.set_yticks(range(linhas))
-    ax.set_xlabel('X')
-    ax.set_ylabel('Y')
+    # Remover as marcações dos eixos X e Y
+    ax.set_xticks([])
+    ax.set_yticks([])
 
-    # Remover as legendas das marcações dos números
-    ax.set_xticklabels([])
-    ax.set_yticklabels([])
-
-    # Adicionar linhas de grade
-    ax.grid(True)
+    # Adicionar linhas de grade com linhas mais finas
+    ax.grid(True, linewidth=0.3, color='gray', linestyle='--')
 
     # Inverter o eixo Y para que a origem (0,0) esteja no canto inferior esquerdo
-    ax.invert_yaxis()
+    #ax.invert_yaxis()
 
     canvas.draw()
 

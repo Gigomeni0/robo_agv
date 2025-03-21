@@ -17,10 +17,15 @@ class RoboController:
         sensores = verificar_sensores(self.matriz, linha, coluna, orientacao)
 
         if comando == "F" and sensores[0] == 1:
-            if orientacao == "N": linha -= 1
-            elif orientacao == "E": coluna += 1
-            elif orientacao == "S": linha += 1
-            elif orientacao == "W": coluna -= 1
+            if orientacao == "N": 
+                linha -= 1
+            elif orientacao == "E": 
+                coluna += 1
+            elif orientacao == "S": 
+                linha += 1
+            elif orientacao == "W": 
+                coluna -= 1
+                
         elif comando == "E":
             orientacao = {"N": "W", "W": "S", "S": "E", "E": "N"}[orientacao]
         elif comando == "D":
