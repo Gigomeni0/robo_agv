@@ -8,7 +8,7 @@ const char* ssid = "Gigo2.4G";
 const char* password = "18253122Ro";
 const char* mqttServer = "test.mosquitto.org";
 const char* topicoComandos = "robo_gaveteiro/comandos";
-const char* topicoSensores = "robo_gaveteiro/sensores";
+const char* topicoStatus = "robo_gaveteiro/status";
 
 WiFiClient espClient;
 PubSubClient client(espClient);
@@ -197,7 +197,7 @@ void processCommands() {
         waiting = true;
         commandIndex += 2; // Avançar para o próximo comando após 'W' e o número
       } else {
-        Serial.println("⚠️ Comando 'W' inválido! Número esperado após 'W'.");
+        Serial.println("Comando 'W' inválido! Número esperado após 'W'.");
         commandIndex++;
       }
     } else {
@@ -232,17 +232,17 @@ void processCommands() {
 
     // Verificar se o tempo limite foi atingido
     if (millis() - commandStartTime > maxCommandTime) {
-      Serial.println("⏱️ Tempo limite atingido! Parando o robô.");
+      Serial.println("Tempo limite atingido! Parando o robô.");
       stopMotors();
       executing = false;
     }
 
     // Verificar se há um obstáculo na frente
     float distFront = readUltrasonic();
-    if (distFront < 15 && distFront > 0) {
-      Serial.println("🚫 Obstáculo na frente!");
+    if (distFront < 15 && distFront > 0) { // Obstáculo detectado
+      Serial.println("Obstáculo na frente!");
       stopMotors();
-      client.publish(topicoSensores, "obstacle_front");
+      client.publish(topicoStatus, "obstaculo"); // Enviar mensagem MQTT
       executing = false;
     }
   }
