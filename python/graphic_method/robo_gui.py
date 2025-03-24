@@ -2,11 +2,14 @@ import os
 import json
 import tkinter as tk
 from tkinter import ttk
+import subprocess
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from mqtt_manager import MQTTManager
 from robo_controller import RoboController
 from utils import desenhar_ambiente, inverter_comandos
+import socket
+from paho.mqtt import client as mqtt
 
 class RoboGUI:
     def __init__(self, root):
@@ -25,7 +28,7 @@ class RoboGUI:
 
         # Criar cliente MQTT
         self.mqtt_client = MQTTManager(
-            broker="test.mosquitto.org",
+            broker="192.168.43.193",
             port=1883,
             topics=["robo_gaveteiro/comandos", "robo_gaveteiro/status"],
             on_message_callback=self.on_mqtt_message
@@ -44,7 +47,12 @@ class RoboGUI:
         
         self.frame_sequencia = ttk.Frame(self.notebook)
         self.notebook.add(self.frame_sequencia, text='Sequência de Rotas')
-
+        
+        # Criar frame para configuração de servidor MQTT local (opcional)
+        self.frame_mqtt = ttk.Frame(self.frame_controles)
+        self.frame_mqtt.pack(side=tk.LEFT, padx=10, pady=10)
+        
+        
         self.frame_controles_lateral = ttk.Frame(self.frame_controles)
         self.frame_controles_lateral.pack(side=tk.LEFT, padx=10, pady=10)
 
@@ -82,6 +90,10 @@ class RoboGUI:
         self.label_wait = ttk.Label(self.frame_controles_lateral, text="Tempo de Espera (s):")
         self.label_wait.grid(row=6, column=0, pady=5)
 
+        # Exibir status do MQTT
+        self.label_status_mqtt = ttk.Label(self.frame_controles_lateral, text="Status MQTT: Desconectado", foreground="red")
+        self.label_status_mqtt.grid(row=7, column=0, columnspan=3, pady=5)  
+        
         self.spin_wait = ttk.Spinbox(self.frame_controles_lateral, from_=1, to=30, width=5)
         self.spin_wait.grid(row=6, column=1, pady=5)
         self.spin_wait.set(1)
@@ -113,6 +125,37 @@ class RoboGUI:
         # Carregar rotas salvas
         self.carregar_rotas_salvas()
 
+        # Iniciar servidor MQTT local
+        self.iniciar_servidor_mqtt()
+
+        # Criar aba para visualizar informações do servidor MQTT
+        self.frame_servidor_mqtt = ttk.Frame(self.notebook)
+        self.notebook.add(self.frame_servidor_mqtt, text='Servidor MQTT')
+
+        self.label_ip = ttk.Label(self.frame_servidor_mqtt, text=f"Endereço IP: {self.ip_local}")
+        self.label_ip.pack(pady=5)
+
+        self.label_porta = ttk.Label(self.frame_servidor_mqtt, text=f"Porta: {self.porta_mqtt}")
+        self.label_porta.pack(pady=5)
+
+        self.label_topicos = ttk.Label(self.frame_servidor_mqtt, text="Tópicos MQTT:")
+        self.label_topicos.pack(pady=5)
+
+        self.lista_topicos = tk.Listbox(self.frame_servidor_mqtt, height=10)
+        self.lista_topicos.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+
+        # Atualizar tópicos recebidos
+        self.mqtt_local_client.on_message = self.on_local_mqtt_message
+        self.mqtt_local_client.subscribe("#")  # Inscrever-se em todos os tópicos
+
+
+    def atualizar_status_mqtt(self):
+        """Atualiza o status do cliente MQTT na interface."""
+        if self.mqtt_client.is_connected():
+            self.label_status_mqtt.config(text="Status MQTT: Conectado", foreground="green")
+        else:
+            self.label_status_mqtt.config(text="Status MQTT: Desconectado", foreground="red")
+            
     def carregar_ultima_posicao(self):
         """Carrega a última posição do robô a partir do arquivo JSON."""
         caminho_arquivo = os.path.join(os.path.dirname(__file__), "position.json")
@@ -153,10 +196,18 @@ class RoboGUI:
 
 
     def enviar_comando(self, comando):
-        self.mqtt_client.publish("robo_gaveteiro/comandos", comando)
-        self.lista_comandos.insert(tk.END, f"[{comando}]")
-        self.estado_robo = self.robo_controller.mover_robo(comando)
+        """Envia um comando MQTT para a ESP32."""
+        try:
+            self.mqtt_local_client.publish("robo_gaveteiro/comandos", comando)
+            print(f"✅ Comando '{comando}' enviado para o tópico 'robo_gaveteiro/comandos'")
+            self.lista_comandos.insert(tk.END, f"[{comando}]")
+            self.estado_robo = self.robo_controller.mover_robo(comando)
 
+            # Salvar a posição atual do robô
+            self.salvar_posicao_atual()
+            self.atualizar_interface()
+        except Exception as e:
+            print(f"❌ Erro ao enviar comando: {e}")
         # Salvar a posição atual do robô
         self.salvar_posicao_atual()
         self.atualizar_interface()
@@ -322,6 +373,35 @@ class RoboGUI:
         self.mqtt_client.disconnect()
         self.root.destroy()
         self.root.quit()
+
+    def iniciar_servidor_mqtt(self):
+        """Inicia um servidor MQTT local usando um arquivo de configuração."""
+        self.ip_local = "192.168.43.193"
+        self.porta_mqtt = 1883
+
+        def iniciar_broker():
+            
+            # Substitua o caminho para o arquivo mqtt.conf pelo caminho correto no seu sistema
+            caminho_config = "C:\Program Files\mosquitto\mosquitto.conf"
+            subprocess.Popen(["mosquitto", "-c", caminho_config])
+
+        try:
+            iniciar_broker()
+            print(f"Servidor MQTT iniciado em {self.ip_local}:{self.porta_mqtt}")
+        except FileNotFoundError:
+            print("⚠️ Mosquitto não encontrado. Certifique-se de que está instalado e no PATH.")
+
+        # Configurar cliente MQTT local
+        self.mqtt_local_client = mqtt.Client()
+        self.mqtt_local_client.connect(self.ip_local, self.porta_mqtt)
+        self.mqtt_local_client.loop_start()
+
+    def on_local_mqtt_message(self, client, userdata, msg):
+        """Callback para mensagens recebidas no servidor MQTT local."""
+        topico = msg.topic
+        payload = msg.payload.decode()
+        print(f"📡 Mensagem recebida no servidor local: {topico} -> {payload}")
+        self.lista_topicos.insert(tk.END, f"{topico}: {payload}")
 
 if __name__ == "__main__":
     root = tk.Tk()
