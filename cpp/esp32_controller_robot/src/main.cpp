@@ -6,31 +6,31 @@
 #include <queue> // Biblioteca para usar filas (queues)
 
 // Configurações de Wi-Fi
-const char *WIFI_SSID = "teste";           // Substitua pelo seu SSID
-const char *WIFI_PASSWORD = "18253122Ro*"; // Substitua pela sua senha
+const char *WIFI_SSID = "Red";          // Substitua pelo seu SSID
+const char *WIFI_PASSWORD = "12345678"; // Substitua pela sua senha
 
 // Configurações de MQTT
-const char *MQTT_SERVER = "192.168.43.193";         // Broker MQTT Local
+const char *MQTT_SERVER = "192.168.146.103";        // Broker MQTT Local
 const int MQTT_PORT = 1883;                         // Porta padrão do MQTT
 const char *MQTT_CLIENT_ID = "admin";               // ID do cliente MQTT
 const char *MQTT_TOPIC = "robo_gaveteiro/comandos"; // Tópico para receber comandos
 
 // Pinos da Ponte H
-#define IN1 15
-#define IN2 16
-#define IN3 17
-#define IN4 18
+#define IN1 6
+#define IN2 7
+#define IN3 15
+#define IN4 16
 
 // Pinos dos Encoders
-#define ENCODER_A 4  // Pino do encoder do motor 1
-#define ENCODER_B 5  // Pino do encoder do motor 1
-#define ENCODER_A2 6 // Pino do encoder do motor 2
-#define ENCODER_B2 7 // Pino do encoder do motor 2
+#define ENCODER_A 4   // Pino do encoder do motor 1
+#define ENCODER_B 5   // Pino do encoder do motor 1
+#define ENCODER_A2 2  // Pino do encoder do motor 2
+#define ENCODER_B2 42 // Pino do encoder do motor 2
 
 // Variáveis dos Encoders
 volatile long pulseCount1 = 0;                                     // Contador de pulsos do motor 1
 volatile long pulseCount2 = 0;                                     // Contador de pulsos do motor 2
-int pulsesPerRevolution = 11;                                      // Pulsos por volta do encoder
+int pulsesPerRevolution = 2470;                                     // Pulsos por volta do encoder
 float wheelDiameter = 12.0;                                        // Diâmetro da roda em cm
 float wheelCircumference = PI * wheelDiameter;                     // Circunferência da roda
 float distancePerPulse = wheelCircumference / pulsesPerRevolution; // Distância por pulso
@@ -42,7 +42,6 @@ unsigned long lastTime2 = 0; // Último tempo de leitura do motor 2
 // Variáveis de distância
 float totalDistance1 = 0; // Distância total percorrida pelo motor 1
 float totalDistance2 = 0; // Distância total percorrida pelo motor 2
-
 
 // Cliente Wi-Fi e MQTT
 WiFiClient espClient;
@@ -125,8 +124,22 @@ void controlarMotores(char comando)
         digitalWrite(IN3, HIGH);
         digitalWrite(IN4, LOW);
         break;
-    case 'B': // Parar
-        Serial.println("Parando motores...");
+    case 'E': // Esquerda
+        Serial.println("Girando para esquerda...");
+        digitalWrite(IN1, LOW);
+        digitalWrite(IN2, HIGH);
+        digitalWrite(IN3, HIGH);
+        digitalWrite(IN4, LOW);
+        break;
+    case 'D': // Direita
+        Serial.println("Girando para direita...");
+        digitalWrite(IN1, HIGH);
+        digitalWrite(IN2, LOW);
+        digitalWrite(IN3, LOW);
+        digitalWrite(IN4, HIGH);
+        break;
+    case 'W': // Esperar
+        Serial.println("Parando...");
         digitalWrite(IN1, LOW);
         digitalWrite(IN2, LOW);
         digitalWrite(IN3, LOW);
@@ -166,34 +179,11 @@ void processarFila()
         Serial.print("Processando mensagem: ");
         Serial.println(mensagem);
 
-        // Processa o JSON
-        StaticJsonDocument<200> jsonDoc; // Tamanho do JSON (ajuste conforme necessário)
-        DeserializationError erro = deserializeJson(jsonDoc, mensagem);
-
-        if (erro)
+        // Processa cada caractere da mensagem
+        for (int i = 0; i < mensagem.length(); i++)
         {
-            Serial.print("Erro ao processar JSON: ");
-            Serial.println(erro.c_str());
-            return;
-        }
-
-        // Extrai a string de comandos do JSON
-        const char *comandos = jsonDoc["comando"];
-        if (comandos)
-        {
-            Serial.print("Comandos recebidos: ");
-            Serial.println(comandos);
-
-            // Processa cada comando individualmente
-            for (int i = 0; comandos[i] != '\0'; i++)
-            {
-                controlarMotores(comandos[i]); // Executa o comando
-                delay(500);                    // Pequeno delay entre comandos (ajuste conforme necessário)
-            }
-        }
-        else
-        {
-            Serial.println("Campo 'comando' não encontrado no JSON.");
+            controlarMotores(mensagem[i]); // Executa o comando
+            delay(500);                    // Pequeno delay entre comandos (ajuste conforme necessário)
         }
     }
 }

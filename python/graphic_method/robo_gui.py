@@ -6,6 +6,7 @@ import subprocess
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from mqtt_manager import MQTTManager
+#from mqtt_manager import porta_em_uso
 from robo_controller import RoboController
 from utils import desenhar_ambiente, inverter_comandos
 import socket
@@ -28,7 +29,7 @@ class RoboGUI:
 
         # Criar cliente MQTT
         self.mqtt_client = MQTTManager(
-            broker="192.168.43.193",
+            broker="192.168.146.103",
             port=1883,
             topics=["robo_gaveteiro/comandos", "robo_gaveteiro/status"],
             on_message_callback=self.on_mqtt_message
@@ -148,7 +149,11 @@ class RoboGUI:
         self.mqtt_local_client.on_message = self.on_local_mqtt_message
         self.mqtt_local_client.subscribe("#")  # Inscrever-se em todos os tópicos
 
-
+    def porta_em_uso(self, porta):
+        """Verifica se a porta está em uso."""
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            return s.connect_ex(("127.0.0.1", porta)) == 0
+        
     def atualizar_status_mqtt(self):
         """Atualiza o status do cliente MQTT na interface."""
         if self.mqtt_client.is_connected():
@@ -373,26 +378,41 @@ class RoboGUI:
         self.mqtt_client.disconnect()
         self.root.destroy()
         self.root.quit()
-
+        
+    def obter_ip_local(self):
+        """Obtém o endereço IP local da máquina."""
+        try:
+            # Conecta a um endereço externo para descobrir o IP local
+            with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+                s.connect(("8.8.8.8", 80))  # Conexão com o DNS do Google
+                return s.getsockname()[0]  # Retorna o IP local
+        except Exception as e:
+            print(f"⚠️ Erro ao obter o IP local: {e}")
+        return "127.0.0.1"  # Retorna localhost como fallback 
+    
     def iniciar_servidor_mqtt(self):
         """Inicia um servidor MQTT local usando um arquivo de configuração."""
-        self.ip_local = "192.168.43.193"
+        self.ip_local = self.obter_ip_local()  # Obtém o IP local dinamicamente
         self.porta_mqtt = 1883
 
         def iniciar_broker():
-            
             # Substitua o caminho para o arquivo mqtt.conf pelo caminho correto no seu sistema
-            caminho_config = "C:\Program Files\mosquitto\mosquitto.conf"
+            caminho_config = "C:\\Program Files\\mosquitto\\mosquitto.conf"
             subprocess.Popen(["mosquitto", "-c", caminho_config])
 
-        try:
-            iniciar_broker()
-            print(f"Servidor MQTT iniciado em {self.ip_local}:{self.porta_mqtt}")
-        except FileNotFoundError:
-            print("⚠️ Mosquitto não encontrado. Certifique-se de que está instalado e no PATH.")
+        # Verifica se a porta está em uso
+        if self.porta_em_uso(self.porta_mqtt):
+            print(f"⚠️ O servidor MQTT já está em execução em {self.ip_local}:{self.porta_mqtt}.")
+        else:
+            try:
+                iniciar_broker()
+                print(f"Servidor MQTT iniciado em {self.ip_local}:{self.porta_mqtt}")
+            except FileNotFoundError:
+                print("⚠️ Mosquitto não encontrado. Certifique-se de que está instalado e no PATH.")
 
         # Configurar cliente MQTT local
         self.mqtt_local_client = mqtt.Client()
+        self.mqtt_local_client.on_message = self.on_local_mqtt_message
         self.mqtt_local_client.connect(self.ip_local, self.porta_mqtt)
         self.mqtt_local_client.loop_start()
 
@@ -401,9 +421,6 @@ class RoboGUI:
         topico = msg.topic
         payload = msg.payload.decode()
         print(f"📡 Mensagem recebida no servidor local: {topico} -> {payload}")
+        # Atualizar a interface gráfica, se necessário
         self.lista_topicos.insert(tk.END, f"{topico}: {payload}")
 
-if __name__ == "__main__":
-    root = tk.Tk()
-    app = RoboGUI(root)
-    root.mainloop()
