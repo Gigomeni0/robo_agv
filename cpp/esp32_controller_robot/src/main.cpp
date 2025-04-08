@@ -1,4 +1,5 @@
 #include <Arduino.h>
+#include <PID_v1.h> // Biblioteca para controle PID
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
 #include <PubSubClient.h>
@@ -15,6 +16,21 @@ const int MQTT_PORT = 1883;                         // Porta padrão do MQTT
 const char *MQTT_CLIENT_ID = "admin";               // ID do cliente MQTT
 const char *MQTT_TOPIC = "robo_gaveteiro/comandos"; // Tópico para receber comandos
 
+// Definições de PID para controle de velocidade
+//  Variáveis do PID para controle de velocidade
+double Setpoint1, Input1, Output1; // Motor 1
+double Setpoint2, Input2, Output2; // Motor 2
+
+// Constantes do PID (ajuste conforme necessário)
+double Kp = 1.5, Ki = 0.5, Kd = 0.1;
+
+// Criando os controladores PID
+PID PID_motor1(&Input1, &Output1, &Setpoint1, Kp, Ki, Kd, DIRECT);
+PID PID_motor2(&Input2, &Output2, &Setpoint2, Kp, Ki, Kd, DIRECT);
+
+// Variáveis para controle de distância
+float distanciaAlvo = 50.0; // 50 cm
+
 // Pinos da Ponte H
 #define IN1 6
 #define IN2 7
@@ -30,7 +46,7 @@ const char *MQTT_TOPIC = "robo_gaveteiro/comandos"; // Tópico para receber coma
 // Variáveis dos Encoders
 volatile long pulseCount1 = 0;                                     // Contador de pulsos do motor 1
 volatile long pulseCount2 = 0;                                     // Contador de pulsos do motor 2
-int pulsesPerRevolution = 2470;                                     // Pulsos por volta do encoder
+int pulsesPerRevolution = 2470;                                    // Pulsos por volta do encoder
 float wheelDiameter = 12.0;                                        // Diâmetro da roda em cm
 float wheelCircumference = PI * wheelDiameter;                     // Circunferência da roda
 float distancePerPulse = wheelCircumference / pulsesPerRevolution; // Distância por pulso
@@ -188,39 +204,66 @@ void processarFila()
     }
 }
 
+// Função para parar os motores
+void pararMotores()
+{
+    digitalWrite(IN1, LOW);
+    digitalWrite(IN2, LOW);
+    digitalWrite(IN3, LOW);
+    digitalWrite(IN4, LOW);
+}
+
 // Função para calcular RPM e distância percorrida
 void calcularRPM_Distancia()
 {
     unsigned long currentTime = millis();
 
-    // Cálculos para o motor 1
-    if (currentTime - lastTime1 >= 1000)
-    { // Atualiza a cada 1 segundo
-        float rpm1 = (float)(pulseCount1 * 60) / (float)pulsesPerRevolution;
+    if (currentTime - lastTime1 >= 100)
+    { // Atualiza a cada 100ms
+        float rpm1 = (pulseCount1 * 600) / pulsesPerRevolution;
         totalDistance1 += pulseCount1 * distancePerPulse;
-        pulseCount1 = 0; // Zera o contador de pulsos
+        pulseCount1 = 0;
         lastTime1 = currentTime;
+
+        float rpm2 = (pulseCount2 * 600) / pulsesPerRevolution;
+        totalDistance2 += pulseCount2 * distancePerPulse;
+        pulseCount2 = 0;
+        lastTime2 = currentTime;
+
+        // Define as entradas do PID
+        Input1 = rpm1;
+        Input2 = rpm2;
+
+        // Calcula novas saídas do PID
+        PID_motor1.Compute();
+        PID_motor2.Compute();
+
+        // Ajusta os motores com o novo PWM calculado pelo PID
+        analogWrite(IN1, Output1);
+        analogWrite(IN2, 0);
+        analogWrite(IN3, Output2);
+        analogWrite(IN4, 0);
 
         Serial.print("Motor 1 - RPM: ");
         Serial.print(rpm1);
-        Serial.print(" | Distância total: ");
+        Serial.print(" | Distância: ");
         Serial.print(totalDistance1);
-        Serial.println(" cm");
-    }
-
-    // Cálculos para o motor 2
-    if (currentTime - lastTime2 >= 1000)
-    { // Atualiza a cada 1 segundo
-        float rpm2 = (float)(pulseCount2 * 60) / (float)pulsesPerRevolution;
-        totalDistance2 += pulseCount2 * distancePerPulse;
-        pulseCount2 = 0; // Zera o contador de pulsos
-        lastTime2 = currentTime;
+        Serial.print(" cm | PWM: ");
+        Serial.println(Output1);
 
         Serial.print("Motor 2 - RPM: ");
         Serial.print(rpm2);
-        Serial.print(" | Distância total: ");
+        Serial.print(" | Distância: ");
         Serial.print(totalDistance2);
-        Serial.println(" cm");
+        Serial.print(" cm | PWM: ");
+        Serial.println(Output2);
+    }
+
+    // **PARAR O ROBÔ QUANDO ALCANÇAR 50CM**
+    if (totalDistance1 >= distanciaAlvo || totalDistance2 >= distanciaAlvo)
+    {
+        Serial.println("Distância alcançada. Parando robô!");
+        pararMotores();
     }
 }
 
@@ -243,6 +286,15 @@ void setup()
     // Configura as interrupções dos encoders
     attachInterrupt(digitalPinToInterrupt(ENCODER_A), encoderISR1, RISING);
     attachInterrupt(digitalPinToInterrupt(ENCODER_A2), encoderISR2, RISING);
+
+    // Configura os valores iniciais do PID
+    Setpoint1 = 30.0; // RPM desejado para motor 1
+    Setpoint2 = 30.0; // RPM desejado para motor 2
+
+    PID_motor1.SetMode(AUTOMATIC);
+    PID_motor2.SetMode(AUTOMATIC);
+    PID_motor1.SetOutputLimits(0, 255); // PWM varia de 0 a 255
+    PID_motor2.SetOutputLimits(0, 255);
 
     // Conecta ao Wi-Fi
     connectToWiFi();
