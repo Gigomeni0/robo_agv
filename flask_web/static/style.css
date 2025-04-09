@@ -1,0 +1,54 @@
+
+
+* {
+    margin: 0;
+    border:0;
+    padding: 0;
+}
+
+h2 {
+    font-family: 'Roboto' sans-serif;
+    font-optical-sizing: auto;
+    font-weight: 100;
+    font-style: bold;
+}
+button { 
+    padding: 15px 30px; 
+    font-size: 18px; 
+    margin: 10px; 
+}
+body {
+    box-sizing: border-box;
+    font-family: 'Roboto', sans-serif;
+    background-color: #242325;
+    color: #fff;
+  }
+  
+  #grid {
+    display: grid;
+    grid-template-columns: repeat(10, 30px);
+    grid-template-rows: repeat(10, 30px);
+    gap: 2px;
+    margin: 20px auto;
+    width: fit-content;
+  }
+  
+  .cell {
+    width: 30px;
+    height: 30px;
+    border: 1px solid #ccc;
+  }
+  
+  .cell.robot {
+    background-color: green;
+  }
+  
+  .cell.blocked {
+    background-color: red;
+  }
+  
+  button {
+    margin: 5px;
+    padding: 10px;
+  }
+  

@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <title>Controle do Robô Gaveteiro</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+</head>
+<body>
+    <h1>Controle do Robô</h1>
+    <div id="status-bar">
+        <p><strong>Broker:</strong> <span id="broker-status">Desconhecido</span></p>
+        <p><strong>MQTT:</strong> <span id="mqtt-status">Desconhecido</span></p>
+    </div>
+
+    <div id="controls">
+        <button onclick="sendCommand('F')">↑</button>
+        <div>
+            <button onclick="sendCommand('E')">←</button>
+            <button onclick="sendCommand('D')">→</button>
+        </div>
+        <input type="number" id="waitTime" placeholder="Tempo em segundos">
+        <button onclick="sendWait()">Esperar</button>
+        <button onclick="definirBase()">Definir Base</button>
+    </div>
+
+    <h2>Grade de Posição</h2>
+    <div id="grid-container"></div>
+
+    <script src="/static/js/script.js"></script>
+</body>
+</html>
