@@ -2,173 +2,168 @@ import os
 import json
 import tkinter as tk
 from tkinter import ttk
+import subprocess
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
-from utils import verificar_sensores, desenhar_ambiente, inverter_comandos
-from mqtt_config import MQTTClient
+from mqtt_manager import MQTTManager
+#from mqtt_manager import porta_em_uso
+from robo_controller import RoboController
+from utils import desenhar_ambiente, inverter_comandos
+import socket
+from paho.mqtt import client as mqtt
 
 class RoboGUI:
     def __init__(self, root):
         self.root = root
         self.root.title("Controle Manual do Robô")
 
-        # Configurações MQTT
-        self.mqtt_broker = "test.mosquitto.org"  # Usar o broker de teste do mosquitto.org
-        self.mqtt_port = 1883
-        self.mqtt_topic = "robo_gaveteiro/comandos"
+        # Criando a matriz do ambiente (10x10)
+        self.matriz = [[0] * 30 for _ in range(30)]
+        self.estado_robo = self.carregar_ultima_posicao()  # Posição inicial
+
+        # Carregar a base do arquivo JSON
+        self.base = self.carregar_base()
+
+        # Criar controlador do robô
+        self.robo_controller = RoboController(self.matriz, self.estado_robo)
 
         # Criar cliente MQTT
-        self.mqtt_client = MQTTClient(self.mqtt_broker, self.mqtt_port, self.mqtt_topic, self.on_mqtt_message)
+        self.mqtt_client = MQTTManager(
+            broker="192.168.146.103",
+            port=1883,
+            topics=["robo_gaveteiro/comandos", "robo_gaveteiro/status"],
+            on_message_callback=self.on_mqtt_message
+        )
         self.mqtt_client.connect()
 
-        # Criando a matriz do ambiente (10x10)
-        self.matriz = [
-            [0, 0, 1, 0, 0, 0, 0, 0, 0, 0],
-            [0, 1, 0, 0, 0, 0, 0, 0, 0, 0],
-            [0, 0, 0, 1, 0, 0, 0, 0, 0, 0],
-            [1, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-            [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-            [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-            [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-            [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-            [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-            [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
-        ]
-
-        # Dimensões da matriz
-        self.linhas = len(self.matriz)
-        self.colunas = len(self.matriz[0])
-
-        # Carregar a última posição do robô a partir do arquivo position.json
-        self.estado_robo = self.carregar_ultima_posicao()
-
-        self.comandos = []  # Lista para armazenar os comandos
-
-        # Configurar interface gráfica
+        # Criando interface gráfica
         self.notebook = ttk.Notebook(self.root)
         self.notebook.pack(expand=1, fill='both')
-
+        
         self.frame_controles = ttk.Frame(self.notebook)
         self.notebook.add(self.frame_controles, text='Controles')
-
+        
         self.frame_rotas = ttk.Frame(self.notebook)
         self.notebook.add(self.frame_rotas, text='Rotas Salvas')
-
+        
         self.frame_sequencia = ttk.Frame(self.notebook)
         self.notebook.add(self.frame_sequencia, text='Sequência de Rotas')
-
+        
+        # Criar frame para configuração de servidor MQTT local (opcional)
+        self.frame_mqtt = ttk.Frame(self.frame_controles)
+        self.frame_mqtt.pack(side=tk.LEFT, padx=10, pady=10)
+        
+        
         self.frame_controles_lateral = ttk.Frame(self.frame_controles)
         self.frame_controles_lateral.pack(side=tk.LEFT, padx=10, pady=10)
 
-        self.btn_frente = ttk.Button(self.frame_controles_lateral, text="Frente", command=lambda: self.enviar_comando_mqtt("F"))
+        # Botões de controle do robô
+        self.btn_frente = ttk.Button(self.frame_controles_lateral, text="Frente", command=lambda: self.enviar_comando("F"))
         self.btn_frente.grid(row=0, column=1)
 
-        self.btn_esquerda = ttk.Button(self.frame_controles_lateral, text="Esquerda", command=lambda: self.enviar_comando_mqtt("E"))
+        self.btn_esquerda = ttk.Button(self.frame_controles_lateral, text="Esquerda", command=lambda: self.enviar_comando("E"))
         self.btn_esquerda.grid(row=1, column=0)
 
-        self.btn_direita = ttk.Button(self.frame_controles_lateral, text="Direita", command=lambda: self.enviar_comando_mqtt("D"))
+        self.btn_direita = ttk.Button(self.frame_controles_lateral, text="Direita", command=lambda: self.enviar_comando("D"))
         self.btn_direita.grid(row=1, column=2)
-
-        self.btn_iniciar_gravacao = ttk.Button(self.frame_controles_lateral, text="Iniciar Gravação", command=self.iniciar_gravacao)
-        self.btn_iniciar_gravacao.grid(row=2, column=0)
-
-        self.btn_salvar_rota = ttk.Button(self.frame_controles_lateral, text="Salvar Rota", command=self.salvar_rota)
-        self.btn_salvar_rota.grid(row=2, column=2)
-
+        
         self.btn_retornar_inicio = ttk.Button(self.frame_controles_lateral, text="Retornar ao Início", command=self.retornar_inicio)
         self.btn_retornar_inicio.grid(row=3, column=1)
+        
+        self.btn_pausa = ttk.Button(self.frame_controles_lateral, text="Inserir Pausa", command=self.inserir_pausa)
+        self.btn_pausa.grid(row=3, column=0, pady=5)
+        
+        self.btn_iniciar_gravacao = ttk.Button(self.frame_controles_lateral, text="Iniciar Gravação", command=self.iniciar_gravacao)
+        self.btn_iniciar_gravacao.grid(row=4, column=0, pady=5)
 
-        # Botão para limpar memória
-        self.btn_limpar_memoria = ttk.Button(self.frame_controles_lateral, text="Limpar Memória", command=self.limpar_memoria)
-        self.btn_limpar_memoria.grid(row=4, column=1)
+        self.btn_salvar_rota = ttk.Button(self.frame_controles_lateral, text="Salvar Rota", command=self.salvar_rota)
+        self.btn_salvar_rota.grid(row=4, column=2, pady=5)
+
+        # Adicionar botão para definir a base
+        self.btn_definir_base = ttk.Button(self.frame_controles_lateral, text="Definir Base", command=self.definir_base)
+        self.btn_definir_base.grid(row=5, column=0, pady=5)
+
+        # Exibir a base atual
+        self.label_base = ttk.Label(self.frame_controles_lateral, text="Base: Não definida")
+        self.label_base.grid(row=6, column=0, columnspan=3, pady=5)
 
         # Configuração de tempo de espera
         self.label_wait = ttk.Label(self.frame_controles_lateral, text="Tempo de Espera (s):")
         self.label_wait.grid(row=6, column=0, pady=5)
 
+        # Exibir status do MQTT
+        self.label_status_mqtt = ttk.Label(self.frame_controles_lateral, text="Status MQTT: Desconectado", foreground="red")
+        self.label_status_mqtt.grid(row=7, column=0, columnspan=3, pady=5)  
+        
         self.spin_wait = ttk.Spinbox(self.frame_controles_lateral, from_=1, to=30, width=5)
         self.spin_wait.grid(row=6, column=1, pady=5)
-        self.spin_wait.set(1)  # Valor padrão
-
-        self.btn_pausa = ttk.Button(self.frame_controles_lateral, text="Inserir Pausa", command=self.inserir_pausa)
-        self.btn_pausa.grid(row=3, column=0, pady=5)    
-
-        # Exibir coordenada atual do robô
-        self.label_coordenadas = ttk.Label(self.frame_controles_lateral, text=f"Coordenadas: ({self.estado_robo[0]}, {self.estado_robo[1]})")
-        self.label_coordenadas.grid(row=5, column=0, columnspan=3, pady=10)
-
-        # Comandos da rota
-        self.label_comandos = ttk.Label(self.frame_controles_lateral, text="Comandos da Rota:")
-        self.label_comandos.grid(row=7, column=0, columnspan=3, pady=5)
-
+        self.spin_wait.set(1)
+        
+        # Lista de comandos
         self.lista_comandos = tk.Listbox(self.frame_controles_lateral, height=10)
         self.lista_comandos.grid(row=8, column=0, columnspan=3, pady=5)
-
-
+        
         # Lista de rotas salvas
         self.lista_rotas = tk.Listbox(self.frame_rotas)
         self.lista_rotas.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
 
         self.btn_executar_rota = ttk.Button(self.frame_rotas, text="Executar Rota", command=self.executar_rota)
         self.btn_executar_rota.pack(pady=10)
-
-        # Instruções para criar sequência
-        self.label_instrucoes = ttk.Label(self.frame_sequencia, text="Selecione as rotas e clique em 'Adicionar à Sequência'")
-        self.label_instrucoes.pack(pady=10)
-
-        # Lista de rotas para criar sequência
-        self.lista_rotas_sequencia = tk.Listbox(self.frame_sequencia, selectmode=tk.MULTIPLE)
-        self.lista_rotas_sequencia.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
-
-        self.btn_adicionar_sequencia = ttk.Button(self.frame_sequencia, text="Adicionar à Sequência", command=self.adicionar_sequencia)
-        self.btn_adicionar_sequencia.pack(pady=10)
-
-        self.btn_remover_sequencia = ttk.Button(self.frame_sequencia, text="Remover da Sequência", command=self.remover_sequencia)
-        self.btn_remover_sequencia.pack(pady=10)
-
-        self.label_sequencia_atual = ttk.Label(self.frame_sequencia, text="Sequência Atual:")
-        self.label_sequencia_atual.pack(pady=10)
-
-        self.lista_sequencia_atual = tk.Listbox(self.frame_sequencia)
-        self.lista_sequencia_atual.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
-
-        self.btn_executar_sequencia = ttk.Button(self.frame_sequencia, text="Executar Sequência", command=self.executar_sequencia)
-        self.btn_executar_sequencia.pack(pady=10)
-
-        self.loop_var = tk.IntVar()
-        self.check_loop = ttk.Checkbutton(self.frame_sequencia, text="Loop", variable=self.loop_var)
-        self.check_loop.pack(pady=10)
-
-        # Configurar gráfico
+        
+        # Configurar o layout do gráfico
         self.fig, self.ax = plt.subplots(figsize=(5, 5))
+        self.fig.subplots_adjust(left=0.05, right=0.95, top=0.95, bottom=0.05)  # Reduzir margens
+        self.ax.set_aspect('equal')  # Garantir que o gráfico seja quadrado
         self.canvas = FigureCanvasTkAgg(self.fig, master=self.frame_controles)
         self.canvas.get_tk_widget().pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
 
         # Inicializar o ambiente
         desenhar_ambiente(self.ax, self.canvas, self.matriz, self.estado_robo[:2])
 
-        # Capturar evento de fechamento da janela
+        # Capturar evento de fechamento
         self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
 
         # Carregar rotas salvas
-        self.carregar_rotas()
+        self.carregar_rotas_salvas()
 
-    def on_mqtt_message(self, client, userdata, msg):
-        print(f"Mensagem recebida: {msg.topic} {msg.payload.decode()}")
+        # Iniciar servidor MQTT local
+        self.iniciar_servidor_mqtt()
 
-    def enviar_comando_mqtt(self, comando):
+        # Criar aba para visualizar informações do servidor MQTT
+        self.frame_servidor_mqtt = ttk.Frame(self.notebook)
+        self.notebook.add(self.frame_servidor_mqtt, text='Servidor MQTT')
+
+        self.label_ip = ttk.Label(self.frame_servidor_mqtt, text=f"Endereço IP: {self.ip_local}")
+        self.label_ip.pack(pady=5)
+
+        self.label_porta = ttk.Label(self.frame_servidor_mqtt, text=f"Porta: {self.porta_mqtt}")
+        self.label_porta.pack(pady=5)
+
+        self.label_topicos = ttk.Label(self.frame_servidor_mqtt, text="Tópicos MQTT:")
+        self.label_topicos.pack(pady=5)
+
+        self.lista_topicos = tk.Listbox(self.frame_servidor_mqtt, height=10)
+        self.lista_topicos.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+
+        # Atualizar tópicos recebidos
+        self.mqtt_local_client.on_message = self.on_local_mqtt_message
+        self.mqtt_local_client.subscribe("#")  # Inscrever-se em todos os tópicos
+
+    def porta_em_uso(self, porta):
+        """Verifica se a porta está em uso."""
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            return s.connect_ex(("127.0.0.1", porta)) == 0
         
-        if comando.startswith("W"):
-            self.mover_robo(comando)  # Use the new pause system
+    def atualizar_status_mqtt(self):
+        """Atualiza o status do cliente MQTT na interface."""
+        if self.mqtt_client.is_connected():
+            self.label_status_mqtt.config(text="Status MQTT: Conectado", foreground="green")
         else:
-            self.mqtt_client.publish(comando)
-            self.mover_robo(comando)
-        self.lista_comandos.insert(tk.END, f"[{comando}]")  # Insert command in the list
-        print(f"Comando enviado: {comando}")
-
- 
+            self.label_status_mqtt.config(text="Status MQTT: Desconectado", foreground="red")
+            
     def carregar_ultima_posicao(self):
-        caminho_arquivo = "python/graphic_method/position.json"
+        """Carrega a última posição do robô a partir do arquivo JSON."""
+        caminho_arquivo = os.path.join(os.path.dirname(__file__), "position.json")
         if os.path.exists(caminho_arquivo):
             with open(caminho_arquivo, "r") as f:
                 try:
@@ -179,65 +174,100 @@ class RoboGUI:
         # Se o arquivo não existir ou houver um erro, inicializar no centro, virado para o norte
         return (self.linhas // 2, self.colunas // 2, "N", 0)
 
-    def mover_robo(self, comando):
-        linha, coluna, orientacao, passos = self.estado_robo
+    def carregar_base(self):
+        """Carrega a base salva no arquivo JSON."""
+        caminho_arquivo = os.path.join(os.path.dirname(__file__), "positions.json")
+        try:
+            with open(caminho_arquivo, "r") as f:
+                dados = json.load(f)
+                if "base" in dados:
+                    print(f"📂 Base carregada: {dados['base']}")
+                    return dados["base"]
+        except (FileNotFoundError, json.JSONDecodeError):
+            print("⚠️ Nenhuma base encontrada no arquivo JSON.")
+        return None
+    
+    def salvar_posicao_atual(self):
+        """Salva a posição atual do robô no arquivo JSON."""
+        caminho_arquivo = os.path.join(os.path.dirname(__file__), "position.json")
+        dados = {
+            "linha": self.estado_robo[0],
+            "coluna": self.estado_robo[1],
+            "orientacao": self.estado_robo[2],
+            "passos": self.estado_robo[3]
+        }
+        with open(caminho_arquivo, "w") as f:
+            json.dump(dados, f, indent=4)
 
-        if comando.startswith("W"):  # Comando de Espera
-            segundos = int(self.spin_wait.get())  # Get time from GUI spinbox
-            self.label_coordenadas.config(text=f"Esperando {segundos} segundos...")
 
-            # Pause without freezing the interface
-            self.root.after(segundos * 1000, lambda: self.label_coordenadas.config(
-                text=f"Coordenadas: ({linha}, {coluna})"))
-            return  # Don't continue movement if it's a waiting command
+    def enviar_comando(self, comando):
+        """Envia um comando MQTT para a ESP32."""
+        try:
+            self.mqtt_local_client.publish("robo_gaveteiro/comandos", comando)
+            print(f"✅ Comando '{comando}' enviado para o tópico 'robo_gaveteiro/comandos'")
+            self.lista_comandos.insert(tk.END, f"[{comando}]")
+            self.estado_robo = self.robo_controller.mover_robo(comando)
 
-        # Verificar sensores
-        sensores = verificar_sensores(self.matriz, linha, coluna, orientacao)
+            # Salvar a posição atual do robô
+            self.salvar_posicao_atual()
+            self.atualizar_interface()
+        except Exception as e:
+            print(f"❌ Erro ao enviar comando: {e}")
+        # Salvar a posição atual do robô
+        self.salvar_posicao_atual()
+        self.atualizar_interface()
+    
+    def atualizar_interface(self):
+        """Atualiza a interface gráfica com a posição atual do robô."""
+        desenhar_ambiente(self.ax, self.canvas, self.matriz, self.estado_robo, getattr(self, "base", None))
 
-        # Decisão de movimento
-        if comando == "F" and sensores[0] == 1:  # Caminho livre à frente
-            if orientacao == "N":
-                linha -= 1
-            elif orientacao == "E":
-                coluna += 1
-            elif orientacao == "S":
-                linha += 1
-            elif orientacao == "W":
-                coluna -= 1
-        elif comando == "E":  # Virar à esquerda
-            orientacao = {"N": "W", "W": "S", "S": "E", "E": "N"}[orientacao]
-        elif comando == "D":  # Virar à direita
-            orientacao = {"N": "E", "E": "S", "S": "W", "W": "N"}[orientacao]
+    def inserir_pausa(self):
+        segundos = int(self.spin_wait.get())
+        comando = f"W{segundos}"
+        self.lista_comandos.insert(tk.END, f"[{comando}]")
+        self.robo_controller.comandos.append(comando)
+        print(f"Pausa de {segundos} segundos adicionada.")
+    
+    def retornar_inicio(self):
+        if not self.robo_controller.comandos:
+            print("⚠️ Nenhum comando registrado para inverter.")
+            return
+        
+        comandos_retorno = inverter_comandos(self.robo_controller.comandos, self.estado_robo[2])
 
-        # Atualizar o estado do robô
-        self.estado_robo = (linha, coluna, orientacao, passos + 1)
+        for comando in comandos_retorno:
+            self.enviar_comando(comando)  # Envia cada comando para o robô
 
-        # Adicionar comando à lista de comandos
-        self.comandos.append(comando)
-
-        # Atualizar a exibição das coordenadas
-        self.label_coordenadas.config(text=f"Coordenadas: ({linha}, {coluna})")
-
-        # Salvar coordenadas no arquivo JSON
-        self.salvar_coordenadas((linha, coluna, orientacao, passos + 1))
-
-        # Desenhar o ambiente e o robô
-        desenhar_ambiente(self.ax, self.canvas, self.matriz, (linha, coluna))
+        print("🔄 Retornando ao início...")
 
     def iniciar_gravacao(self):
-        self.comandos = []
-        self.lista_comandos.delete(0, tk.END)  # Clear the list
-        print("Gravação de rota iniciada.")
+        """Inicia a gravação de comandos para uma nova rota."""
+        self.robo_controller.comandos = []  # Limpa comandos anteriores
+        self.lista_comandos.delete(0, tk.END)  # Limpa a lista da interface
+        print("🔴 Gravação iniciada. Execute os comandos para salvar a rota.")
 
 
     def salvar_rota(self):
-        caminho_arquivo = "python/graphic_method/rotas_salvas.json"
-        rota_nome = f"Rota {len(self.lista_rotas.get(0, tk.END)) + 1}"
-        rota = {
-            "nome": rota_nome,
-            "comandos": self.comandos,
-            "orientacao_inicial": self.estado_robo[2]
-        }
+        """Salva os comandos gravados, incluindo a orientação inicial e final."""
+        if not self.robo_controller.comandos:
+            print("⚠️ Nenhum comando gravado para salvar.")
+            return
+
+        # Verificar se a base está definida
+        if not hasattr(self, "base"):
+            print("⚠️ Base não definida. Defina a base antes de salvar uma rota.")
+            return
+
+        # Verificar se o robô está na base
+        if (self.estado_robo[0] != self.base["linha"] or
+            self.estado_robo[1] != self.base["coluna"] or
+            self.estado_robo[2] != self.base["orientacao"]):
+            print("⚠️ O robô não está na base. Não é possível salvar a rota.")
+            return
+
+        caminho_arquivo = os.path.join(os.path.dirname(__file__), "rotas_salvas.json")
+
+        # Carregar as rotas já existentes no arquivo JSON
         if os.path.exists(caminho_arquivo):
             with open(caminho_arquivo, "r") as f:
                 try:
@@ -247,168 +277,150 @@ class RoboGUI:
         else:
             dados = []
 
+        # Contar quantas rotas já existem no arquivo JSON
+        total_rotas_salvas = len(dados)
+
+        # Criar o nome da nova rota
+        rota_nome = f"Rota {total_rotas_salvas + 1}"
+
+        rota = {
+            "nome": rota_nome,
+            "comandos": self.robo_controller.comandos,
+            "orientacao_inicial": self.estado_robo[2],  # Orientação no começo
+            "orientacao_final": self.robo_controller.get_orientacao_final()  # Orientação no final
+        }
+
+        # Adiciona a nova rota à lista de rotas salvas
         dados.append(rota)
 
+        # Salva o arquivo atualizado
         with open(caminho_arquivo, "w") as f:
             json.dump(dados, f, indent=4)
-        print(f"Rota salva em {caminho_arquivo}")
 
-        # Adicionar rota salva à lista de rotas
+        # Atualiza a lista na interface
         self.lista_rotas.insert(tk.END, rota_nome)
-        self.lista_rotas_sequencia.insert(tk.END, rota_nome)
+        print(f"💾 Rota salva: {rota_nome} (Orientação inicial: {rota['orientacao_inicial']}, final: {rota['orientacao_final']})")
+   
+    def carregar_rotas_salvas(self):
+        """Carrega as rotas do arquivo JSON para a interface gráfica."""
+        caminho_arquivo = os.path.join(os.path.dirname(__file__), "rotas_salvas.json")
+        print(f"Carregando rotas salvas do arquivo: {caminho_arquivo}")
 
-        # Limpar a lista de comandos após salvar a rota
-        self.comandos = []
-
-    def salvar_coordenadas(self, estado_robo):
-        caminho_arquivo = "python/graphic_method/position.json"
-        dados = {
-            "linha": estado_robo[0],
-            "coluna": estado_robo[1],
-            "orientacao": estado_robo[2],
-            "passos": estado_robo[3]
-        }
-        with open(caminho_arquivo, "w") as f:
-            json.dump(dados, f, indent=4)
-        print(f"Coordenadas salvas em {caminho_arquivo}")
-
-    def inserir_pausa(self):
-        segundos = int(self.spin_wait.get())  # Get time from spinbox
-        comando = f"W{segundos}"  # Create the command like "W5" for 5 seconds
-        self.comandos.append(comando)  # Add to command list
-        self.label_coordenadas.config(text=f"Pausa de {segundos} segundos inserida")
-        self.lista_comandos.insert(tk.END, f"[{comando}]")  # Add to command listbox
-        print(f"Pausa de {segundos} segundos inserida na rota.")  # Show in console
-
-    def carregar_rotas(self):
-        caminho_arquivo = "python/graphic_method/rotas_salvas.json"
         if os.path.exists(caminho_arquivo):
             with open(caminho_arquivo, "r") as f:
                 try:
                     dados = json.load(f)
                 except json.JSONDecodeError:
                     dados = []
-            for rota in dados:
-                if "nome" in rota:
-                    self.lista_rotas.insert(tk.END, rota["nome"])
-                    self.lista_rotas_sequencia.insert(tk.END, rota["nome"])
+                    print("Erro ao decodificar o arquivo JSON.")
+        else:
+            dados = []
+            print("Arquivo de rotas salvas não encontrado.")
 
-    def adicionar_sequencia(self):
-        selecionados = self.lista_rotas_sequencia.curselection()
-        for i in selecionados:
-            rota_nome = self.lista_rotas_sequencia.get(i)
-            self.lista_sequencia_atual.insert(tk.END, rota_nome)
-        print(f"Rotas adicionadas à sequência: {[self.lista_rotas_sequencia.get(i) for i in selecionados]}")
-
-    def remover_sequencia(self):
-        selecionados = self.lista_sequencia_atual.curselection()
-        for i in reversed(selecionados):
-            self.lista_sequencia_atual.delete(i)
-        print(f"Rotas removidas da sequência: {[self.lista_sequencia_atual.get(i) for i in selecionados]}")
+        # Adiciona cada rota à interface gráfica
+        for rota in dados:
+            self.lista_rotas.insert(tk.END, rota["nome"])
 
     def executar_rota(self):
         selecionado = self.lista_rotas.curselection()
         if selecionado:
             rota_nome = self.lista_rotas.get(selecionado)
-            caminho_arquivo = "python/graphic_method/rotas_salvas.json"
-            with open(caminho_arquivo, "r") as f:
-                dados = json.load(f)
-            for r in dados:
-                if r["nome"] == rota_nome:
-                    comandos = r["comandos"]
-                    break
-            # Verificar se o robô está na posição inicial
-            if self.estado_robo[:2] == (self.linhas // 2, self.colunas // 2):
-                self.executar_comandos(comandos)
-            else:
-                print("O robô não está na posição inicial. Não é possível executar a rota.")
-
-    def executar_comandos(self, comandos):
-        if comandos:
-            comando = comandos.pop(0)
-            if comando.startswith("W"):  # Comando de espera
-                segundos = int(comando[1:])
-                self.root.after(segundos * 1000, lambda: self.executar_comandos(comandos))
-            else:
-                self.mover_robo(comando)
-                self.root.after(500, lambda: self.executar_comandos(comandos))  # Atraso de 500ms entre os comandos
-
-    def criar_sequencia(self):
-        selecionados = self.lista_rotas_sequencia.curselection()
-        if selecionados:
-            self.sequencia = [self.lista_rotas_sequencia.get(i) for i in selecionados]
-            print(f"Sequência criada: {self.sequencia}")
-
-    def executar_sequencia(self):
-        sequencia = list(self.lista_sequencia_atual.get(0, tk.END))
-        if sequencia:
-            self.executar_rotas_sequencia(sequencia)
-
-    def executar_rotas_sequencia(self, sequencia):
-        if sequencia:
-            rota_nome = sequencia.pop(0)
-            caminho_arquivo = "python/graphic_method/rotas_salvas.json"
-            with open(caminho_arquivo, "r") as f:
-                dados = json.load(f)
-            for r in dados:
-                if r["nome"] == rota_nome:
-                    comandos = r["comandos"]
-                    orientacao_inicial = r.get("orientacao_inicial", "N")
-                    break
-            self.executar_comandos_sequencia(comandos, sequencia, orientacao_inicial)
-            
-    def ajustar_orientacao(self, orientacao_inicial):
-        orientacao_atual = self.estado_robo[2]
-        while orientacao_atual != orientacao_inicial:
-                self.mover_robo("D")
-                orientacao_atual = self.estado_robo[2]
-            
-    def executar_comandos_sequencia(self, comandos, sequencia, orientacao_inicial):
-        if comandos:
-            comando = comandos.pop(0)
-            if comando.startswith("W"):  # Comando de espera
-                segundos = int(comando[1:])
-                self.root.after(segundos * 1000, lambda: self.executar_comandos_sequencia(comandos, sequencia, orientacao_inicial))
-            else:
-                self.mover_robo(comando)
-                self.root.after(500, lambda: self.executar_comandos_sequencia(comandos, sequencia, orientacao_inicial))
+            print(f"🔄 Executando rota: {rota_nome}")
+            comandos = self.robo_controller.carregar_rotas(rota_nome)
+            print(f"📜 Comandos carregados: {comandos}")
+            for comando in comandos:
+                print(f"🚀 Enviando comando: {comando}")
+                self.enviar_comando(comando)
         else:
-            self.ajustar_orientacao(orientacao_inicial)
-            if self.loop_var.get() == 1:
-                self.executar_rotas_sequencia(self.sequencia.copy())
+            print("⚠️ Nenhuma rota selecionada.")
+    
+    def on_mqtt_message(self, client, userdata, msg):
+        payload = msg.payload.decode()
+        print(f"📡 Mensagem recebida: {msg.topic} {payload}")
+
+        if msg.topic == "robo_gaveteiro/status":
+            if payload == "obstaculo":
+                print("⚠️ Obstáculo detectado! Robô parado.")
             else:
-                self.executar_rotas_sequencia(sequencia)
+                print(f"📍 Novo status do robô: {payload}")
+                self.estado_robo = json.loads(payload)  # Atualiza posição se for JSON válido
+                self.atualizar_interface()
+        elif msg.topic == "robo_gaveteiro/comandos":
+            print(f"🔄 Comando recebido: {payload}")
 
-    def retornar_inicio(self):
-        comandos_retorno = inverter_comandos(self.comandos, self.estado_robo[2])
-        
-        for comando in comandos_retorno:
-            self.lista_comandos.insert(tk.END, f"[{comando}]")  # Show each command in the list
-            self.lista_comandos.yview(tk.END)  # Scroll the list automatically
-        
-        print("Executando retorno ao início...")
-        self.executar_comandos(comandos_retorno)
+    def definir_base(self):
+        """Define a posição e orientação atual do robô como a base e salva no arquivo JSON."""
+        self.base = {
+            "linha": self.estado_robo[0],
+            "coluna": self.estado_robo[1],
+            "orientacao": self.estado_robo[2]
+        }
+        self.label_base.config(text=f"Base: ({self.base['linha']}, {self.base['coluna']}, {self.base['orientacao']})")
+        print(f"📍 Base definida: {self.base}")
 
-    def limpar_memoria(self):
-        # Deletar arquivos de rotas e coordenadas
-        if os.path.exists("python/graphic_method/rotas_salvas.json"):
-            os.remove("python/graphic_method/rotas_salvas.json")
-        if os.path.exists("python/graphic_method/position.json"):
-            os.remove("python/graphic_method/position.json")
+        # Salvar a base no arquivo JSON
+        caminho_arquivo = os.path.join(os.path.dirname(__file__), "positions.json")
+        try:
+            with open(caminho_arquivo, "r") as f:
+                dados = json.load(f)
+        except (FileNotFoundError, json.JSONDecodeError):
+            dados = {}
 
-        # Reposicionar o robô no centro, orientado ao norte
-        self.estado_robo = (self.linhas // 2, self.colunas // 2, "N", 0)
-        self.comandos = []
-        self.label_coordenadas.config(text=f"Coordenadas: ({self.estado_robo[0]}, {self.estado_robo[1]})")
-        self.lista_rotas.delete(0, tk.END)
-        self.lista_rotas_sequencia.delete(0, tk.END)
-        self.lista_sequencia_atual.delete(0, tk.END)
-        desenhar_ambiente(self.ax, self.canvas, self.matriz, (self.linhas // 2, self.colunas // 2))
-        print("Memória limpa e robô reposicionado.")
+        dados["base"] = self.base
 
+        with open(caminho_arquivo, "w") as f:
+            json.dump(dados, f, indent=4)
+
+        # Redesenhar o ambiente com a base
+        desenhar_ambiente(self.ax, self.canvas, self.matriz, self.estado_robo, self.base)
+   
     def on_closing(self):
-        if tk.messagebox.askokcancel("Sair", "Tem certeza que deseja fechar o programa?"):
-            self.mqtt_client.disconnect()
-            self.root.destroy()
-            self.root.quit()  # Stop all Tkinter threads
-            print("Janela fechada e programa finalizado.")
+        self.mqtt_client.disconnect()
+        self.root.destroy()
+        self.root.quit()
+        
+    def obter_ip_local(self):
+        """Obtém o endereço IP local da máquina."""
+        try:
+            # Conecta a um endereço externo para descobrir o IP local
+            with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+                s.connect(("8.8.8.8", 80))  # Conexão com o DNS do Google
+                return s.getsockname()[0]  # Retorna o IP local
+        except Exception as e:
+            print(f"⚠️ Erro ao obter o IP local: {e}")
+        return "127.0.0.1"  # Retorna localhost como fallback 
+    
+    def iniciar_servidor_mqtt(self):
+        """Inicia um servidor MQTT local usando um arquivo de configuração."""
+        self.ip_local = self.obter_ip_local()  # Obtém o IP local dinamicamente
+        self.porta_mqtt = 1883
+
+        def iniciar_broker():
+            # Substitua o caminho para o arquivo mqtt.conf pelo caminho correto no seu sistema
+            caminho_config = "C:\\Program Files\\mosquitto\\mosquitto.conf"
+            subprocess.Popen(["mosquitto", "-c", caminho_config])
+
+        # Verifica se a porta está em uso
+        if self.porta_em_uso(self.porta_mqtt):
+            print(f"⚠️ O servidor MQTT já está em execução em {self.ip_local}:{self.porta_mqtt}.")
+        else:
+            try:
+                iniciar_broker()
+                print(f"Servidor MQTT iniciado em {self.ip_local}:{self.porta_mqtt}")
+            except FileNotFoundError:
+                print("⚠️ Mosquitto não encontrado. Certifique-se de que está instalado e no PATH.")
+
+        # Configurar cliente MQTT local
+        self.mqtt_local_client = mqtt.Client()
+        self.mqtt_local_client.on_message = self.on_local_mqtt_message
+        self.mqtt_local_client.connect(self.ip_local, self.porta_mqtt)
+        self.mqtt_local_client.loop_start()
+
+    def on_local_mqtt_message(self, client, userdata, msg):
+        """Callback para mensagens recebidas no servidor MQTT local."""
+        topico = msg.topic
+        payload = msg.payload.decode()
+        print(f"📡 Mensagem recebida no servidor local: {topico} -> {payload}")
+        # Atualizar a interface gráfica, se necessário
+        self.lista_topicos.insert(tk.END, f"{topico}: {payload}")
+

@@ -1,10 +1,10 @@
 import paho.mqtt.client as mqtt
 
 class MQTTClient:
-    def __init__(self, broker, port, topic, on_message_callback):
+    def __init__(self, broker, port, topics, on_message_callback):
         self.broker = broker
         self.port = port
-        self.topic = topic
+        self.topics = topics if isinstance(topics, list) else [topics]  # Suporta lista ou string única
         self.client = mqtt.Client()
         self.client.on_connect = self.on_connect
         self.client.on_message = on_message_callback
@@ -18,11 +18,13 @@ class MQTTClient:
 
     def on_connect(self, client, userdata, flags, rc):
         print(f"Conectado ao broker MQTT com código {rc}")
-        client.subscribe(self.topic)
+        for topic in self.topics:
+            client.subscribe(topic)
+            print(f"📡 Inscrito no tópico: {topic}")
 
-    def publish(self, message):
-        self.client.publish(self.topic, message)
-        print(f"Comando enviado: {message}")
+    def publish(self, topic, message):
+        self.client.publish(topic, message)
+        print(f"📤 Mensagem enviada para {topic}: {message}")
 
     def disconnect(self):
         self.client.loop_stop()
