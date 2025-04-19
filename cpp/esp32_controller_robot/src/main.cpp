@@ -53,12 +53,7 @@ std::queue<String> filaMensagens;
 // Funções de interrupção dos encoders
 void encoderISR1()
 {
-    pulseCount1++; // Incrementa o contador de pulsos do motor 1
-}
-
-void encoderISR2()
-{
-    pulseCount2++; // Incrementa o contador de pulsos do motor 2
+    pulseCount1++; // Incrementa o contador de pulsos do motor 
 }
 
 // Função para conectar ao Wi-Fi
@@ -111,7 +106,6 @@ void connectToMQTT()
         }
     }
 }
-
 // Função para processar comandos dos motores
 void controlarMotores(char comando)
 {
@@ -163,7 +157,7 @@ void mqttCallback(char *topic, byte *payload, unsigned int length)
     mensagem[length] = '\0'; // Adiciona o terminador nulo
     Serial.print("Mensagem: ");
     Serial.println(mensagem);
-
+  
     // Adiciona a mensagem à fila
     filaMensagens.push(String(mensagem));
     Serial.println("Mensagem adicionada à fila.");
