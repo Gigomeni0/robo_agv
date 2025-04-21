@@ -111,9 +111,12 @@ class RoboGUI:
         self.btn_executar_rota.pack(pady=5)
         self.btn_retornar_base = ttk.Button(self.frame_automacao, text="Voltar à Base", command=self.retornar_inicio)
         self.btn_retornar_base.pack(pady=5)
+        # Lista de rotas salvas
         self.lista_rotas = tk.Listbox(self.frame_automacao)
         self.lista_rotas.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
 
+        self.btn_executar_rota = ttk.Button(self.frame_automacao, text="Executar Rota", command=self.executar_rota)
+        self.btn_executar_rota.pack(pady=10)
 
         # --- Widgets da aba Sequência de Rotas ---
         # Exemplo: botões e listas para executar sequências de rotas, etc.
@@ -144,16 +147,7 @@ class RoboGUI:
         # Lista de comandos
         self.lista_comandos = tk.Listbox(self.frame_controles_lateral, height=10)
         self.lista_comandos.grid(row=8, column=0, columnspan=3, pady=5)
-        
-        # Lista de rotas salvas
-        self.lista_rotas = tk.Listbox(self.frame_rotas)
-        self.lista_rotas.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
-
-        self.btn_executar_rota = ttk.Button(self.frame_rotas, text="Executar Rota", command=self.executar_rota)
-        self.btn_executar_rota.pack(pady=10)
-        
-
-
+                
         # Inicializar o ambiente
         desenhar_ambiente(self.ax, self.canvas, self.matriz, self.estado_robo[:2])
 
