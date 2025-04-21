@@ -18,6 +18,10 @@ class RoboGUI:
         self.root = root
         self.root.title("Controle Manual do Robô")
 
+        # Definindo status do robô
+        self.executando_rota = False
+        self.pausado_por_obstaculo = False
+        
         # Criando a matriz do ambiente (10x10)
         self.matriz = [[0] * 30 for _ in range(30)]
         self.estado_robo = self.carregar_ultima_posicao()  # Posição inicial
@@ -83,6 +87,15 @@ class RoboGUI:
         self.btn_iniciar_gravacao.grid(row=4, column=0, pady=5)
         self.btn_salvar_rota = ttk.Button(self.frame_controles_lateral, text="Salvar Rota", command=self.salvar_rota)
         self.btn_salvar_rota.grid(row=4, column=2, pady=5)
+        
+        # Botão para simular obstáculo
+        self.btn_simular_obstaculo = ttk.Button(self.frame_controles_lateral, text="Simular Obstáculo", command=self.simular_obstaculo)
+        self.btn_simular_obstaculo.grid(row=11, column=0, columnspan=3, pady=10)
+        
+        # Botão para simular caminho livre
+        self.btn_simular_livre = ttk.Button(self.frame_controles_lateral, text="Simular Livre", command=self.simular_livre)
+        self.btn_simular_livre.grid(row=12, column=0, columnspan=3, pady=10)    
+        
         #Grafico locomoção 
         self.canvas_automacao = FigureCanvasTkAgg(self.fig, master=self.frame_automacao)
         self.canvas_automacao.get_tk_widget().pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
@@ -247,7 +260,9 @@ class RoboGUI:
     def atualizar_interface(self):
         """Atualiza a interface gráfica com a posição atual do robô."""
         desenhar_ambiente(self.ax, self.canvas, self.matriz, self.estado_robo, getattr(self, "base", None))
-
+        self.canvas.draw()
+        self.canvas_automacao.draw()
+        
     def inserir_pausa(self):
         segundos = int(self.spin_wait.get())
         comando = f"W{segundos}"
@@ -361,7 +376,48 @@ class RoboGUI:
         else:
             print("⚠️ Nenhuma rota selecionada.")
             
-            
+    def executar_rota(self):
+        selecionado = self.lista_rotas.curselection()
+        if selecionado:
+            rota_nome = self.lista_rotas.get(selecionado)
+            print(f"🔄 Executando rota: {rota_nome}")
+            comandos = self.robo_controller.carregar_rotas(rota_nome)
+            print(f"📜 Comandos carregados: {comandos}")
+            self.executar_comandos_sequencialmente(comandos)
+        else:
+            print("⚠️ Nenhuma rota selecionada.")
+
+    def executar_comandos_sequencialmente(self, comandos, idx=0):
+        # Salva o estado para possível retomada
+        self.comandos_em_execucao = comandos
+        self.idx_parado = idx
+
+        if self.pausado_por_obstaculo:
+            print("Execução pausada por obstáculo.")
+            return
+        if idx < len(comandos):
+            comando = comandos[idx]
+            self.enviar_comando(comando)
+            self.executando_rota = True
+            self.root.after(500, lambda: self.executar_comandos_sequencialmente(comandos, idx+1))
+        else:
+            self.executando_rota = False
+            print("✅ Execução da rota concluída.")
+    
+    def simular_obstaculo(self):
+        """Simula o recebimento de um obstáculo pelo MQTT."""
+        class DummyMsg:
+            topic = "robo_gaveteiro/status"
+            payload = b"obstaculo"
+        self.on_mqtt_message(None, None, DummyMsg())
+    
+    def simular_livre(self):
+        """Simula o recebimento da mensagem 'livre' pelo MQTT."""
+        class DummyMsg:
+            topic = "robo_gaveteiro/status"
+            payload = b"livre"
+        self.on_mqtt_message(None, None, DummyMsg())
+        
     # Função de callback para mensagens recebidas do MQTT
     def on_mqtt_message(self, client, userdata, msg):
         payload = msg.payload.decode()
@@ -384,6 +440,41 @@ class RoboGUI:
                 if 0 <= linha_obs < len(self.matriz) and 0 <= coluna_obs < len(self.matriz[0]):
                     self.matriz[linha_obs][coluna_obs] = 1  # 1 = obstáculo
                     self.atualizar_interface()
+                
+                
+                    
+                self.pausado_por_obstaculo = True
+                self.executando_rota = False
+                # Exibir aviso visual
+                tkinter.messagebox.showwarning("Obstáculo detectado", "O robô parou devido a um obstáculo!\nRemova o obstáculo para continuar.")
+                # (Opcional) Emitir som
+                self.root.bell()
+                return  # Não continue executando comandos
+            
+            elif payload == "livre":
+                print("✅ Caminho livre! Robô pode continuar.")
+                # Remove obstáculo à frente do robô
+                linha, coluna, orientacao, _ = self.estado_robo
+                if orientacao == "N":
+                    linha_obs, coluna_obs = linha - 1, coluna
+                elif orientacao == "S":
+                    linha_obs, coluna_obs = linha + 1, coluna
+                elif orientacao == "E":
+                    linha_obs, coluna_obs = linha, coluna + 1
+                elif orientacao == "W":
+                    linha_obs, coluna_obs = linha, coluna - 1
+                if 0 <= linha_obs < len(self.matriz) and 0 <= coluna_obs < len(self.matriz[0]):
+                    self.matriz[linha_obs][coluna_obs] = 0  # Remove obstáculo
+                    self.atualizar_interface()
+                
+                
+                if self.pausado_por_obstaculo:
+                    self.pausado_por_obstaculo = False
+                    # Retoma a execução do ponto parado
+                    if hasattr(self, 'comandos_em_execucao') and hasattr(self, 'idx_parado'):
+                        self.executar_comandos_sequencialmente(self.comandos_em_execucao, self.idx_parado)
+                return    
+            
             else:
                 print(f"📍 Novo status do robô: {payload}")
                 try:

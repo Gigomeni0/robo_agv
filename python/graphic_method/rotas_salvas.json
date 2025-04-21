@@ -1,1 +1,21 @@
-[]
+[
+    {
+        "nome": "Rota 1",
+        "comandos": [
+            "F",
+            "F",
+            "F",
+            "F",
+            "E",
+            "E",
+            "F",
+            "F",
+            "F",
+            "F",
+            "D",
+            "D"
+        ],
+        "orientacao_inicial": "N",
+        "orientacao_final": "N"
+    }
+]

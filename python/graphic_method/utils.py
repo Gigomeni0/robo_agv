@@ -25,10 +25,15 @@ def desenhar_ambiente(ax, canvas, matriz, posicao_robo, base=None):
     ax.clear()
     linhas, colunas = len(matriz), len(matriz[0])
 
-    # Desenhar o grid
+    # Desenhar o grid e obstáculos
     for i in range(linhas):
         for j in range(colunas):
-            ax.add_patch(plt.Rectangle((j, linhas - i - 1), 1, 1, edgecolor='gray', facecolor='none', linewidth=0.5))
+            if matriz[i][j] == 1:
+                # Obstáculo
+                ax.add_patch(plt.Rectangle((j, linhas - i - 1), 1, 1, color='black', alpha=0.8))
+            else:
+                # Grid normal
+                ax.add_patch(plt.Rectangle((j, linhas - i - 1), 1, 1, edgecolor='gray', facecolor='none', linewidth=0.5))
 
     # Desenhar a base, se definida
     if base:
@@ -43,15 +48,9 @@ def desenhar_ambiente(ax, canvas, matriz, posicao_robo, base=None):
     # Configurar os limites dos eixos
     ax.set_xlim(-1, colunas)
     ax.set_ylim(-1, linhas)
-
-    # Remover as marcações dos eixos X e Y
     ax.set_xticks([])
     ax.set_yticks([])
-
-    # Adicionar linhas de grade com linhas mais finas
     ax.grid(True, linewidth=0.3, color='gray', linestyle='--')
-
-    # Inverter o eixo Y para que a origem (0,0) esteja no canto inferior esquerdo
     #ax.invert_yaxis()
 
     canvas.draw()
