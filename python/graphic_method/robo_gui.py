@@ -119,7 +119,11 @@ class RoboGUI:
         # Exibir status do MQTT
         self.label_status_mqtt = ttk.Label(self.frame_controles_lateral, text="Status MQTT: Desconectado", foreground="red")
         self.label_status_mqtt.grid(row=7, column=0, columnspan=3, pady=5)  
+        # ...após outros botões na self.frame_controles_lateral...
+        self.btn_bluetooth = ttk.Button(self.frame_controles_lateral, text="Ativar Bluetooth", command=self.ativar_bluetooth)
+        self.btn_bluetooth.grid(row=10, column=0, columnspan=3, pady=10)
         
+        # Caixa de seleção para escolher o tempo de espera
         self.spin_wait = ttk.Spinbox(self.frame_controles_lateral, from_=1, to=30, width=5)
         self.spin_wait.grid(row=6, column=1, pady=5)
         self.spin_wait.set(1)
@@ -343,7 +347,7 @@ class RoboGUI:
         # Adiciona cada rota à interface gráfica
         for rota in dados:
             self.lista_rotas.insert(tk.END, rota["nome"])
-
+    # Funçao para executar rota selecionada
     def executar_rota(self):
         selecionado = self.lista_rotas.curselection()
         if selecionado:
@@ -356,7 +360,9 @@ class RoboGUI:
                 self.enviar_comando(comando)
         else:
             print("⚠️ Nenhuma rota selecionada.")
-    
+            
+            
+    # Função de callback para mensagens recebidas do MQTT
     def on_mqtt_message(self, client, userdata, msg):
         payload = msg.payload.decode()
         print(f"📡 Mensagem recebida: {msg.topic} {payload}")
@@ -387,7 +393,8 @@ class RoboGUI:
                     pass
         elif msg.topic == "robo_gaveteiro/comandos":
             print(f"🔄 Comando recebido: {payload}")
-
+    
+    # Função para definir a base do robô
     def definir_base(self):
         """Define a posição e orientação atual do robô como a base e salva no arquivo JSON."""
         self.base = {
@@ -414,11 +421,13 @@ class RoboGUI:
         # Redesenhar o ambiente com a base
         desenhar_ambiente(self.ax, self.canvas, self.matriz, self.estado_robo, self.base)
    
+   
+   # Função de fechamento da janela
     def on_closing(self):
         self.mqtt_client.disconnect()
         self.root.destroy()
         self.root.quit()
-        
+    # Iniciar o loop do cliente MQTT E as funções relacionadas ao servidor MQTT local
     def obter_ip_local(self):
         """Obtém o endereço IP local da máquina."""
         try:
@@ -472,6 +481,15 @@ class RoboGUI:
         print(f"📡 Mensagem recebida no servidor local: {topico} -> {payload}")
         # Atualizar a interface gráfica, se necessário
         self.lista_topicos.insert(tk.END, f"{topico}: {payload}")
+
+    # Definir o comando para ativar o Bluetooth
+    def ativar_bluetooth(self):
+        """Envia comando para ESP entrar em modo Bluetooth."""
+        try:
+            self.mqtt_local_client.publish("robo_gaveteiro/status", "bluetooth")
+            print("✅ Comando 'bluetooth' enviado para o tópico 'robo_gaveteiro/status'")
+        except Exception as e:
+            print(f"❌ Erro ao enviar comando bluetooth: {e}")
 
     def confirmar_resetar(self):
         """Exibe uma caixa de confirmação antes de resetar tudo."""
