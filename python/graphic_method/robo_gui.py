@@ -11,6 +11,7 @@ from robo_controller import RoboController
 from utils import desenhar_ambiente, inverter_comandos
 import socket
 from paho.mqtt import client as mqtt
+import tkinter.messagebox
 
 class RoboGUI:
     def __init__(self, root):
@@ -29,7 +30,7 @@ class RoboGUI:
 
         # Criar cliente MQTT
         self.mqtt_client = MQTTManager(
-            broker="192.168.146.103",
+            broker=self.obter_ip_local(),
             port=1883,
             topics=["robo_gaveteiro/comandos", "robo_gaveteiro/status"],
             on_message_callback=self.on_mqtt_message
@@ -41,44 +42,68 @@ class RoboGUI:
         self.notebook.pack(expand=1, fill='both')
         
         self.frame_controles = ttk.Frame(self.notebook)
-        self.notebook.add(self.frame_controles, text='Controles')
+        self.notebook.add(self.frame_controles, text='Manual')
+        
+        # Aba Automação
+        self.frame_automacao = ttk.Frame(self.notebook)
+        self.notebook.add(self.frame_automacao, text='Automação')
+
         
         self.frame_rotas = ttk.Frame(self.notebook)
         self.notebook.add(self.frame_rotas, text='Rotas Salvas')
-        
         self.frame_sequencia = ttk.Frame(self.notebook)
         self.notebook.add(self.frame_sequencia, text='Sequência de Rotas')
         
         # Criar frame para configuração de servidor MQTT local (opcional)
         self.frame_mqtt = ttk.Frame(self.frame_controles)
-        self.frame_mqtt.pack(side=tk.LEFT, padx=10, pady=10)
-        
-        
+        self.frame_mqtt.pack(side=tk.LEFT, padx=10, pady=10)    
         self.frame_controles_lateral = ttk.Frame(self.frame_controles)
         self.frame_controles_lateral.pack(side=tk.LEFT, padx=10, pady=10)
 
+        # Configurar o layout do gráfico
+        self.fig, self.ax = plt.subplots(figsize=(5, 5))
+        self.fig.subplots_adjust(left=0.05, right=0.95, top=0.95, bottom=0.05)  # Reduzir margens
+        self.ax.set_aspect('equal')  # Garantir que o gráfico seja quadrado
+        self.canvas = FigureCanvasTkAgg(self.fig, master=self.frame_controles)
+        self.canvas.get_tk_widget().pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
+
+        # --- Widgets da aba Controles ---
         # Botões de controle do robô
         self.btn_frente = ttk.Button(self.frame_controles_lateral, text="Frente", command=lambda: self.enviar_comando("F"))
         self.btn_frente.grid(row=0, column=1)
-
         self.btn_esquerda = ttk.Button(self.frame_controles_lateral, text="Esquerda", command=lambda: self.enviar_comando("E"))
         self.btn_esquerda.grid(row=1, column=0)
-
         self.btn_direita = ttk.Button(self.frame_controles_lateral, text="Direita", command=lambda: self.enviar_comando("D"))
         self.btn_direita.grid(row=1, column=2)
-        
         self.btn_retornar_inicio = ttk.Button(self.frame_controles_lateral, text="Retornar ao Início", command=self.retornar_inicio)
         self.btn_retornar_inicio.grid(row=3, column=1)
-        
         self.btn_pausa = ttk.Button(self.frame_controles_lateral, text="Inserir Pausa", command=self.inserir_pausa)
         self.btn_pausa.grid(row=3, column=0, pady=5)
-        
         self.btn_iniciar_gravacao = ttk.Button(self.frame_controles_lateral, text="Iniciar Gravação", command=self.iniciar_gravacao)
         self.btn_iniciar_gravacao.grid(row=4, column=0, pady=5)
-
         self.btn_salvar_rota = ttk.Button(self.frame_controles_lateral, text="Salvar Rota", command=self.salvar_rota)
         self.btn_salvar_rota.grid(row=4, column=2, pady=5)
+        #Grafico locomoção 
+        self.canvas_automacao = FigureCanvasTkAgg(self.fig, master=self.frame_automacao)
+        self.canvas_automacao.get_tk_widget().pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
 
+
+        # --- Widgets da aba Automação ---
+        # Exemplo: botões e listas para gravação, salvar, executar rotas, etc.
+        self.btn_iniciar_gravacao = ttk.Button(self.frame_automacao, text="Iniciar Gravação", command=self.iniciar_gravacao)
+        self.btn_iniciar_gravacao.pack(pady=5)
+        self.btn_salvar_rota = ttk.Button(self.frame_automacao, text="Salvar Rota", command=self.salvar_rota)
+        self.btn_salvar_rota.pack(pady=5)
+        self.btn_executar_rota = ttk.Button(self.frame_automacao, text="Executar Rota", command=self.executar_rota)
+        self.btn_executar_rota.pack(pady=5)
+        self.btn_retornar_base = ttk.Button(self.frame_automacao, text="Voltar à Base", command=self.retornar_inicio)
+        self.btn_retornar_base.pack(pady=5)
+        self.lista_rotas = tk.Listbox(self.frame_automacao)
+        self.lista_rotas.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+
+
+        # --- Widgets da aba Sequência de Rotas ---
+        # Exemplo: botões e listas para executar sequências de rotas, etc.
         # Adicionar botão para definir a base
         self.btn_definir_base = ttk.Button(self.frame_controles_lateral, text="Definir Base", command=self.definir_base)
         self.btn_definir_base.grid(row=5, column=0, pady=5)
@@ -110,12 +135,7 @@ class RoboGUI:
         self.btn_executar_rota = ttk.Button(self.frame_rotas, text="Executar Rota", command=self.executar_rota)
         self.btn_executar_rota.pack(pady=10)
         
-        # Configurar o layout do gráfico
-        self.fig, self.ax = plt.subplots(figsize=(5, 5))
-        self.fig.subplots_adjust(left=0.05, right=0.95, top=0.95, bottom=0.05)  # Reduzir margens
-        self.ax.set_aspect('equal')  # Garantir que o gráfico seja quadrado
-        self.canvas = FigureCanvasTkAgg(self.fig, master=self.frame_controles)
-        self.canvas.get_tk_widget().pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
+
 
         # Inicializar o ambiente
         desenhar_ambiente(self.ax, self.canvas, self.matriz, self.estado_robo[:2])
@@ -149,6 +169,10 @@ class RoboGUI:
         self.mqtt_local_client.on_message = self.on_local_mqtt_message
         self.mqtt_local_client.subscribe("#")  # Inscrever-se em todos os tópicos
 
+        # Botão para resetar tudo
+        self.btn_resetar = ttk.Button(self.frame_controles_lateral, text="Resetar Tudo", command=self.confirmar_resetar)
+        self.btn_resetar.grid(row=9, column=0, columnspan=3, pady=10)
+
     def porta_em_uso(self, porta):
         """Verifica se a porta está em uso."""
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
@@ -156,11 +180,10 @@ class RoboGUI:
         
     def atualizar_status_mqtt(self):
         """Atualiza o status do cliente MQTT na interface."""
-        if self.mqtt_client.is_connected():
-            self.label_status_mqtt.config(text="Status MQTT: Conectado", foreground="green")
+        if  self.mqtt_client.client.is_connected():
+                self.label_status_mqtt.config(text="Status MQTT: Conectado", foreground="green")
         else:
             self.label_status_mqtt.config(text="Status MQTT: Desconectado", foreground="red")
-            
     def carregar_ultima_posicao(self):
         """Carrega a última posição do robô a partir do arquivo JSON."""
         caminho_arquivo = os.path.join(os.path.dirname(__file__), "position.json")
@@ -341,10 +364,27 @@ class RoboGUI:
         if msg.topic == "robo_gaveteiro/status":
             if payload == "obstaculo":
                 print("⚠️ Obstáculo detectado! Robô parado.")
+                # Marcar obstáculo à frente do robô
+                linha, coluna, orientacao, _ = self.estado_robo
+                if orientacao == "N":
+                    linha_obs, coluna_obs = linha - 1, coluna
+                elif orientacao == "S":
+                    linha_obs, coluna_obs = linha + 1, coluna
+                elif orientacao == "E":
+                    linha_obs, coluna_obs = linha, coluna + 1
+                elif orientacao == "W":
+                    linha_obs, coluna_obs = linha, coluna - 1
+                # Verifica se está dentro dos limites
+                if 0 <= linha_obs < len(self.matriz) and 0 <= coluna_obs < len(self.matriz[0]):
+                    self.matriz[linha_obs][coluna_obs] = 1  # 1 = obstáculo
+                    self.atualizar_interface()
             else:
                 print(f"📍 Novo status do robô: {payload}")
-                self.estado_robo = json.loads(payload)  # Atualiza posição se for JSON válido
-                self.atualizar_interface()
+                try:
+                    self.estado_robo = json.loads(payload)
+                    self.atualizar_interface()
+                except Exception:
+                    pass
         elif msg.topic == "robo_gaveteiro/comandos":
             print(f"🔄 Comando recebido: {payload}")
 
@@ -394,6 +434,15 @@ class RoboGUI:
         """Inicia um servidor MQTT local usando um arquivo de configuração."""
         self.ip_local = self.obter_ip_local()  # Obtém o IP local dinamicamente
         self.porta_mqtt = 1883
+        self.mqtt_local_client = mqtt.Client()
+        self.mqtt_local_client.on_message = self.on_local_mqtt_message
+        self.mqtt_local_client.on_connect = lambda client, userdata, flags, rc: self.atualizar_status_mqtt()
+        self.mqtt_local_client.on_disconnect = lambda client, userdata, rc: self.atualizar_status_mqtt()
+
+        self.mqtt_local_client.connect(self.ip_local, self.porta_mqtt)
+        self.mqtt_local_client.loop_start()
+        # Atualize o status logo após tentar conectar
+        self.atualizar_status_mqtt()
 
         def iniciar_broker():
             # Substitua o caminho para o arquivo mqtt.conf pelo caminho correto no seu sistema
@@ -423,4 +472,39 @@ class RoboGUI:
         print(f"📡 Mensagem recebida no servidor local: {topico} -> {payload}")
         # Atualizar a interface gráfica, se necessário
         self.lista_topicos.insert(tk.END, f"{topico}: {payload}")
+
+    def confirmar_resetar(self):
+        """Exibe uma caixa de confirmação antes de resetar tudo."""
+        resposta = tkinter.messagebox.askyesno(
+            "Confirmação",
+            "Tem certeza que deseja apagar todas as rotas, histórico e reiniciar o robô no centro?"
+        )
+        if resposta:
+            self.resetar_robo_e_historico()
+
+    def resetar_robo_e_historico(self):
+        """Limpa rotas, histórico e reinicia o robô no centro."""
+        # Limpar rotas salvas
+        caminho_rotas = os.path.join(os.path.dirname(__file__), "rotas_salvas.json")
+        if os.path.exists(caminho_rotas):
+            with open(caminho_rotas, "w") as f:
+                json.dump([], f, indent=4)
+        self.lista_rotas.delete(0, tk.END)
+
+        # Limpar comandos e histórico do robô
+        self.robo_controller.comandos = []
+        self.lista_comandos.delete(0, tk.END)
+
+        # Reiniciar posição do robô no centro
+        linhas = len(self.matriz)
+        colunas = len(self.matriz[0])
+        self.estado_robo = (linhas // 2, colunas // 2, "N", 0)
+        self.robo_controller.estado_robo = self.estado_robo
+        self.salvar_posicao_atual()
+        self.base = None
+        self.label_base.config(text="Base: Não definida")
+
+        # Atualizar interface
+        self.atualizar_interface()
+        tkinter.messagebox.showinfo("Reset", "Sistema reiniciado com sucesso!")
 

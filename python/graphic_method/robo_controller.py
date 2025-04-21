@@ -60,10 +60,22 @@ class RoboController:
     def iniciar_gravacao(self):
         self.comandos = []
 
-    def salvar_rota(self, caminho_arquivo):
-        rota = {"comandos": self.comandos, "orientacao_inicial": self.estado_robo[2]}
+    def salvar_rota(self, caminho_arquivo, nome_rota):
+        nova_rota = {
+            "nome": nome_rota,
+            "comandos": self.comandos,
+            "orientacao_inicial": self.estado_robo[2]
+        }
+        rotas = []
+        if os.path.exists(caminho_arquivo):
+            with open(caminho_arquivo, "r") as f:
+                try:
+                    rotas = json.load(f)
+                except json.JSONDecodeError:
+                    rotas = []
+        rotas.append(nova_rota)
         with open(caminho_arquivo, "w") as f:
-            json.dump(rota, f, indent=4)
+            json.dump(rotas, f, indent=4)
 
 
     def carregar_rotas(self, rota_nome):
