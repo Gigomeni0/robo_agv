@@ -1,269 +1,357 @@
+// File: src/main.cpp
+//===============================================================================================================
 #include <Arduino.h>
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
 #include <PubSubClient.h>
-#include <ArduinoJson.h>
-#include <queue> // Biblioteca para usar filas (queues)
+#include <queue>
 
-// Configurações de Wi-Fi
-const char *WIFI_SSID = "Red";          // Substitua pelo seu SSID
-const char *WIFI_PASSWORD = "12345678"; // Substitua pela sua senha
+// Configurações (mantidas as mesmas)
+const char *WIFI_SSID = "SSID";
+const char *WIFI_PASSWORD = "SUA_SENHA";
+const char *MQTT_SERVER = "192.168.121.103";
+const int MQTT_PORT = 1883;
+const char *MQTT_CLIENT_ID = "admin";
+const char *MQTT_TOPIC = "robo_gaveteiro/comandos";
 
-// Configurações de MQTT
-const char *MQTT_SERVER = "192.168.146.103";        // Broker MQTT Local
-const int MQTT_PORT = 1883;                         // Porta padrão do MQTT
-const char *MQTT_CLIENT_ID = "admin";               // ID do cliente MQTT
-const char *MQTT_TOPIC = "robo_gaveteiro/comandos"; // Tópico para receber comandos
-
-// Pinos da Ponte H
+// Pinos (mantidos os mesmos)
 #define IN1 6
 #define IN2 7
 #define IN3 15
 #define IN4 16
+#define ENCODER_A 1
+#define ENCODER_B 2
+#define ENCODER_A2 47
+#define ENCODER_B2 21
 
-// Pinos dos Encoders
-#define ENCODER_A 4   // Pino do encoder do motor 1
-#define ENCODER_B 5   // Pino do encoder do motor 1
-#define ENCODER_A2 2  // Pino do encoder do motor 2
-#define ENCODER_B2 42 // Pino do encoder do motor 2
+// Variáveis dos Encoders (mantidas)
+volatile long pulseCount1 = 0;
+volatile long pulseCount2 = 0;
+int pulsesPerRevolution = 2740;
+float wheelDiameter = 12.0;
+float wheelCircumference = PI * wheelDiameter;
+float distancePerPulse = wheelCircumference / pulsesPerRevolution;
 
-// Variáveis dos Encoders
-volatile long pulseCount1 = 0;                                     // Contador de pulsos do motor 1
-volatile long pulseCount2 = 0;                                     // Contador de pulsos do motor 2
-int pulsesPerRevolution = 2470;                                     // Pulsos por volta do encoder
-float wheelDiameter = 12.0;                                        // Diâmetro da roda em cm
-float wheelCircumference = PI * wheelDiameter;                     // Circunferência da roda
-float distancePerPulse = wheelCircumference / pulsesPerRevolution; // Distância por pulso
+// --- NOVAS VARIÁVEIS PARA CONTROLE POR PULSOS ---
+const long PULSOS_FRENTE_TRAS = 27000; // Pulsos para movimento linear
+const long PULSOS_CURVA = 1000;         // Pulsos para curvas
+bool emMovimento = false;
+String comandoAtual = "";
+unsigned long inicioMovimento = 0;
+const unsigned long TIMEOUT_MOVIMENTO = 10000; // 10 segundos
 
-// Variáveis de tempo
-unsigned long lastTime1 = 0; // Último tempo de leitura do motor 1
-unsigned long lastTime2 = 0; // Último tempo de leitura do motor 2
-
-// Variáveis de distância
-float totalDistance1 = 0; // Distância total percorrida pelo motor 1
-float totalDistance2 = 0; // Distância total percorrida pelo motor 2
-
-// Cliente Wi-Fi e MQTT
+// Variáveis existentes (mantidas)
+unsigned long lastTime1 = 0, lastTime2 = 0;
+float totalDistance1 = 0, totalDistance2 = 0;
 WiFiClient espClient;
 PubSubClient mqttClient(espClient);
-
-// Fila de mensagens
 std::queue<String> filaMensagens;
 
-// Funções de interrupção dos encoders
+// Interrupções dos encoders (mantidas)
 void encoderISR1()
 {
-    pulseCount1++; // Incrementa o contador de pulsos do motor 
+  if (emMovimento)
+    pulseCount1++;
+}
+void encoderISR2()
+{
+  if (emMovimento)
+    pulseCount2++;
 }
 
-// Função para conectar ao Wi-Fi
+// --- FUNÇÕES ADICIONADAS/MODIFICADAS ---
+void iniciarMovimento(String comando)
+{
+  comando.toUpperCase();
+  comandoAtual = comando;
+  emMovimento = true;
+  pulseCount1 = 0;
+  pulseCount2 = 0;
+  inicioMovimento = millis();
+
+  if (comando == "F")
+  {
+    digitalWrite(IN1, HIGH);
+    digitalWrite(IN2, LOW);
+    digitalWrite(IN3, HIGH);
+    digitalWrite(IN4, LOW);
+    Serial.println("INICIANDO: Frente (27000 pulsos)");
+  }
+  else if (comando == "T")
+  {
+    digitalWrite(IN1, LOW);
+    digitalWrite(IN2, HIGH);
+    digitalWrite(IN3, LOW);
+    digitalWrite(IN4, HIGH);
+    Serial.println("INICIANDO: Trás (27000 pulsos)");
+  }
+  else if (comando == "D")
+  {
+    digitalWrite(IN1, HIGH);
+    digitalWrite(IN2, LOW);
+    digitalWrite(IN3, LOW);
+    digitalWrite(IN4, HIGH);
+    Serial.println("INICIANDO: Direita (685 pulsos)");
+  }
+  else if (comando == "E")
+  {
+    digitalWrite(IN1, LOW);
+    digitalWrite(IN2, HIGH);
+    digitalWrite(IN3, HIGH);
+    digitalWrite(IN4, LOW);
+    Serial.println("INICIANDO: Esquerda (685 pulsos)");
+  }
+}
+
+void pararMotores()
+{
+  digitalWrite(IN1, LOW);
+  digitalWrite(IN2, LOW);
+  digitalWrite(IN3, LOW);
+  digitalWrite(IN4, LOW);
+  emMovimento = false;
+
+  Serial.print("FINALIZADO: ");
+  Serial.print(comandoAtual);
+  Serial.print(" | Pulsos: ");
+  Serial.print(pulseCount1);
+  Serial.print(", ");
+  Serial.println(pulseCount2);
+
+  // Publica status via MQTT
+  String status = "Concluido:" + comandoAtual + ",Pulsos:" + String(pulseCount1) + "," + String(pulseCount2);
+  mqttClient.publish("robo/status", status.c_str());
+}
+
+void verificarMovimento()
+{
+  if (!emMovimento)
+    return;
+
+  // Verifica timeout
+  if (millis() - inicioMovimento > TIMEOUT_MOVIMENTO)
+  {
+    Serial.println("ERRO: Timeout de movimento");
+    pararMotores();
+    return;
+  }
+
+  // Verifica pulsos conforme o comando
+  long pulsosAlvo = (comandoAtual == "F" || comandoAtual == "T") ? PULSOS_FRENTE_TRAS : PULSOS_CURVA;
+
+  if ((comandoAtual == "F" || comandoAtual == "D") &&
+      (pulseCount1 >= pulsosAlvo && pulseCount2 >= pulsosAlvo))
+  {
+    pararMotores();
+  }
+  else if ((comandoAtual == "T" || comandoAtual == "E") &&
+           (pulseCount1 >= pulsosAlvo && pulseCount2 >= pulsosAlvo))
+  {
+    pararMotores();
+  }
+}
+
+// Funções existentes MODIFICADAS
+void controlarMotores(String comando)
+{
+  comando.toUpperCase();
+
+  if (comando == "P")
+  {
+    pararMotores();
+    return;
+  }
+
+  if (emMovimento)
+  {
+    Serial.println("Aguardando movimento atual terminar");
+    return;
+  }
+
+  if (comando == "F" || comando == "T" || comando == "D" || comando == "E")
+  {
+    iniciarMovimento(comando);
+  }
+  else
+  {
+    Serial.println("Comando inválido: " + comando);
+  }
+}
+
+void processarFila()
+{
+  if (emMovimento || filaMensagens.empty())
+    return;
+
+  String mensagem = filaMensagens.front();
+  filaMensagens.pop();
+  controlarMotores(mensagem);
+}
+
+// Funções existentes MANTIDAS SEM ALTERAÇÃO
+
+// Conecta ao Wi-Fi
 void connectToWiFi()
 {
-    Serial.println("Conectando ao Wi-Fi...");
-    int n = WiFi.scanNetworks();
-    Serial.println("Redes Wi-Fi disponíveis:");
-    for (int i = 0; i < n; ++i)
-    {
-        Serial.print(i + 1);
-        Serial.print(": ");
-        Serial.print(WiFi.SSID(i));
-        Serial.print(" (");
-        Serial.print(WiFi.RSSI(i));
-        Serial.println(" dBm)");
-    }
-    WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+  Serial.print("Conectando ao Wi-Fi");
+  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
 
-    while (WiFi.status() != WL_CONNECTED)
-    {
-        delay(1000);
-        Serial.print(".");
-    }
+  while (WiFi.status() != WL_CONNECTED)
+  {
+    delay(500);
+    Serial.print(".");
+  }
 
-    Serial.println("\nConectado ao Wi-Fi!");
-    Serial.print("IP: ");
-    Serial.println(WiFi.localIP());
+  Serial.println("\nConectado ao Wi-Fi");
+  Serial.print("Endereço IP: ");
+  Serial.println(WiFi.localIP());
 }
 
-// Função para conectar ao servidor MQTT
+// Conecta ao MQTT
 void connectToMQTT()
 {
-    Serial.println("Conectando ao servidor MQTT...");
-    while (!mqttClient.connected())
+  while (!mqttClient.connected())
+  {
+    Serial.print("Conectando ao MQTT...");
+
+    if (mqttClient.connect(MQTT_CLIENT_ID))
     {
-        if (mqttClient.connect(MQTT_CLIENT_ID))
-        {
-            Serial.println("Conectado ao servidor MQTT!");
-            mqttClient.subscribe(MQTT_TOPIC); // Inscreve-se no tópico
-            Serial.print("Inscrito no tópico: ");
-            Serial.println(MQTT_TOPIC);
-        }
-        else
-        {
-            Serial.print("Falha na conexão MQTT, rc=");
-            Serial.print(mqttClient.state());
-            Serial.println(" Tentando novamente em 5 segundos...");
-            delay(5000);
-        }
+      Serial.println("Conectado");
+      mqttClient.subscribe(MQTT_TOPIC);
     }
-}
-// Função para processar comandos dos motores
-void controlarMotores(char comando)
-{
-    switch (comando)
+    else
     {
-    case 'F': // Frente
-        Serial.println("Movendo para frente...");
-        digitalWrite(IN1, HIGH);
-        digitalWrite(IN2, LOW);
-        digitalWrite(IN3, HIGH);
-        digitalWrite(IN4, LOW);
-        break;
-    case 'E': // Esquerda
-        Serial.println("Girando para esquerda...");
-        digitalWrite(IN1, LOW);
-        digitalWrite(IN2, HIGH);
-        digitalWrite(IN3, HIGH);
-        digitalWrite(IN4, LOW);
-        break;
-    case 'D': // Direita
-        Serial.println("Girando para direita...");
-        digitalWrite(IN1, HIGH);
-        digitalWrite(IN2, LOW);
-        digitalWrite(IN3, LOW);
-        digitalWrite(IN4, HIGH);
-        break;
-    case 'W': // Esperar
-        Serial.println("Parando...");
-        digitalWrite(IN1, LOW);
-        digitalWrite(IN2, LOW);
-        digitalWrite(IN3, LOW);
-        digitalWrite(IN4, LOW);
-        break;
-    default:
-        Serial.println("Comando desconhecido.");
-        break;
+      Serial.print("Falha, rc=");
+      Serial.print(mqttClient.state());
+      Serial.println(" Tentando novamente em 5 segundos");
+      delay(5000);
     }
+  }
 }
 
 // Função de callback para mensagens MQTT
 void mqttCallback(char *topic, byte *payload, unsigned int length)
 {
-    Serial.print("Mensagem recebida no tópico: ");
-    Serial.println(topic);
+  Serial.print("Mensagem recebida no tópico: ");
+  Serial.println(topic);
 
-    // Converte o payload para uma string
-    char mensagem[length + 1];
-    memcpy(mensagem, payload, length);
-    mensagem[length] = '\0'; // Adiciona o terminador nulo
-    Serial.print("Mensagem: ");
-    Serial.println(mensagem);
-  
-    // Adiciona a mensagem à fila
-    filaMensagens.push(String(mensagem));
-    Serial.println("Mensagem adicionada à fila.");
+  char mensagem[length + 1];
+  memcpy(mensagem, payload, length);
+  mensagem[length] = '\0';
+  Serial.print("Mensagem: ");
+  Serial.println(mensagem);
+
+  // Adiciona mensagem à fila
+  filaMensagens.push(String(mensagem));
 }
 
-// Função para processar a fila de mensagens
-void processarFila()
-{
-    if (!filaMensagens.empty())
-    {
-        String mensagem = filaMensagens.front(); // Pega a primeira mensagem da fila
-        filaMensagens.pop();                     // Remove a mensagem da fila
-        Serial.print("Processando mensagem: ");
-        Serial.println(mensagem);
-
-        // Processa cada caractere da mensagem
-        for (int i = 0; i < mensagem.length(); i++)
-        {
-            controlarMotores(mensagem[i]); // Executa o comando
-            delay(500);                    // Pequeno delay entre comandos (ajuste conforme necessário)
-        }
-    }
-}
-
-// Função para calcular RPM e distância percorrida
+// Calcula RPM e distância percorrida
 void calcularRPM_Distancia()
 {
-    unsigned long currentTime = millis();
+  unsigned long currentTime = millis();
+  unsigned long elapsedTime1 = currentTime - lastTime1;
+  unsigned long elapsedTime2 = currentTime - lastTime2;
 
-    // Cálculos para o motor 1
-    if (currentTime - lastTime1 >= 1000)
-    { // Atualiza a cada 1 segundo
-        float rpm1 = (float)(pulseCount1 * 60) / (float)pulsesPerRevolution;
-        totalDistance1 += pulseCount1 * distancePerPulse;
-        pulseCount1 = 0; // Zera o contador de pulsos
-        lastTime1 = currentTime;
+  if (elapsedTime1 >= 1000)
+  { // A cada segundo
+    // Calcula RPM para o motor 1
+    float rpm1 = (pulseCount1 * 60.0) / pulsesPerRevolution;
 
-        Serial.print("Motor 1 - RPM: ");
-        Serial.print(rpm1);
-        Serial.print(" | Distância total: ");
-        Serial.print(totalDistance1);
-        Serial.println(" cm");
-    }
+    // Calcula distância percorrida pelo motor 1
+    float distance1 = pulseCount1 * distancePerPulse;
+    totalDistance1 += distance1;
 
-    // Cálculos para o motor 2
-    if (currentTime - lastTime2 >= 1000)
-    { // Atualiza a cada 1 segundo
-        float rpm2 = (float)(pulseCount2 * 60) / (float)pulsesPerRevolution;
-        totalDistance2 += pulseCount2 * distancePerPulse;
-        pulseCount2 = 0; // Zera o contador de pulsos
-        lastTime2 = currentTime;
+    Serial.print("Motor 1 - RPM: ");
+    Serial.print(rpm1);
+    Serial.print(", Distância: ");
+    Serial.print(totalDistance1);
+    Serial.println(" cm");
 
-        Serial.print("Motor 2 - RPM: ");
-        Serial.print(rpm2);
-        Serial.print(" | Distância total: ");
-        Serial.print(totalDistance2);
-        Serial.println(" cm");
-    }
+    // Reseta contadores e tempo
+    pulseCount1 = 0;
+    lastTime1 = currentTime;
+  }
+
+  if (elapsedTime2 >= 1000)
+  { // A cada segundo
+    // Calcula RPM para o motor 2
+    float rpm2 = (pulseCount2 * 60.0) / pulsesPerRevolution;
+
+    // Calcula distância percorrida pelo motor 2
+    float distance2 = pulseCount2 * distancePerPulse;
+    totalDistance2 += distance2;
+
+    Serial.print("Motor 2 - RPM: ");
+    Serial.print(rpm2);
+    Serial.print(", Distância: ");
+    Serial.print(totalDistance2);
+    Serial.println(" cm");
+
+    // Reseta contadores e tempo
+    pulseCount2 = 0;
+    lastTime2 = currentTime;
+  }
 }
 
 void setup()
 {
-    Serial.begin(115200);
+  Serial.begin(115200);
 
-    // Configura os pinos da Ponte H
-    pinMode(IN1, OUTPUT);
-    pinMode(IN2, OUTPUT);
-    pinMode(IN3, OUTPUT);
-    pinMode(IN4, OUTPUT);
+  // Configura os pinos da Ponte H
+  pinMode(IN1, OUTPUT);
+  pinMode(IN2, OUTPUT);
+  pinMode(IN3, OUTPUT);
+  pinMode(IN4, OUTPUT);
 
-    // Configura os pinos dos encoders
-    pinMode(ENCODER_A, INPUT);
-    pinMode(ENCODER_B, INPUT);
-    pinMode(ENCODER_A2, INPUT);
-    pinMode(ENCODER_B2, INPUT);
+  // Configura os pinos dos encoders
+  pinMode(ENCODER_A, INPUT);
+  pinMode(ENCODER_B, INPUT);
+  pinMode(ENCODER_A2, INPUT);
+  pinMode(ENCODER_B2, INPUT);
 
-    // Configura as interrupções dos encoders
-    attachInterrupt(digitalPinToInterrupt(ENCODER_A), encoderISR1, RISING);
-    attachInterrupt(digitalPinToInterrupt(ENCODER_A2), encoderISR2, RISING);
+  // Configura as interrupções dos encoders
+  attachInterrupt(digitalPinToInterrupt(ENCODER_A), encoderISR1, RISING);
+  attachInterrupt(digitalPinToInterrupt(ENCODER_A2), encoderISR2, RISING);
 
-    // Conecta ao Wi-Fi
-    connectToWiFi();
+  // Conecta ao Wi-Fi
+  connectToWiFi();
 
-    // Configura o servidor MQTT e a função de callback
-    mqttClient.setServer(MQTT_SERVER, MQTT_PORT);
-    mqttClient.setCallback(mqttCallback);
+  // Configura o servidor MQTT e a função de callback
+  mqttClient.setServer(MQTT_SERVER, MQTT_PORT);
+  mqttClient.setCallback(mqttCallback);
 
-    // Conecta ao servidor MQTT
-    connectToMQTT();
+  // Conecta ao servidor MQTT
+  connectToMQTT();
+
+  // Inscreve no tópico
+  mqttClient.subscribe(MQTT_TOPIC);
 }
 
+// Loop principal atualizado
 void loop()
 {
-    // Verifica se o Wi-Fi está conectado
-    if (WiFi.status() != WL_CONNECTED)
-    {
-        Serial.println("Wi-Fi desconectado. Tentando reconectar...");
-        connectToWiFi();
-    }
+  // Conexões (mantidas)
+  if (WiFi.status() != WL_CONNECTED)
+    connectToWiFi();
+  if (!mqttClient.connected())
+    connectToMQTT();
+  mqttClient.loop();
 
-    // Mantém a conexão MQTT ativa
-    mqttClient.loop();
+  // Processamento (atualizado)
+  verificarMovimento();
+  processarFila();
+  calcularRPM_Distancia();
 
-    // Processa a fila de mensagens
-    processarFila();
-
-    // Calcula RPM e distância percorrida
-    calcularRPM_Distancia();
+  // Debug durante movimento
+  static unsigned long lastDebug = 0;
+  if (emMovimento && millis() - lastDebug > 500)
+  {
+    lastDebug = millis();
+    Serial.print("Progresso: ");
+    Serial.print(pulseCount1);
+    Serial.print("/");
+    Serial.print((comandoAtual == "F" || comandoAtual == "T") ? PULSOS_FRENTE_TRAS : PULSOS_CURVA);
+    Serial.print(" | ");
+    Serial.println(pulseCount2);
+  }
 }
