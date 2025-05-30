@@ -36,7 +36,7 @@ class RoboGUI:
         self.mqtt_client = MQTTManager(
             broker=self.obter_ip_local(),
             port=1883,
-            topics=["robo_gaveteiro/comandos", "robo_gaveteiro/status"],
+            topics=["robo_gaveteiro/comandos", "robo_gaveteiro/status", "robo_gaveteiro/plotter"],
             on_message_callback=self.on_mqtt_message
         )
         self.mqtt_client.connect()
@@ -183,6 +183,12 @@ class RoboGUI:
         # Botão para resetar tudo
         self.btn_resetar = ttk.Button(self.frame_controles_lateral, text="Resetar Tudo", command=self.confirmar_resetar)
         self.btn_resetar.grid(row=9, column=0, columnspan=3, pady=10)
+
+        # Aba Plotter para calibragem de pulsos
+        self.frame_plotter = ttk.Frame(self.notebook)
+        self.notebook.add(self.frame_plotter, text='Plotter')
+        self.listbox_plotter = tk.Listbox(self.frame_plotter, height=10)
+        self.listbox_plotter.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
 
     def porta_em_uso(self, porta):
         """Verifica se a porta está em uso."""
@@ -496,7 +502,11 @@ class RoboGUI:
                     pass
         elif msg.topic == "robo_gaveteiro/comandos":
             print(f"🔄 Comando recebido: {payload}")
-    
+        elif msg.topic == "robo_gaveteiro/plotter":
+            print(f"📊 Pulsos recebidos: {payload}")
+            self.listbox_plotter.insert(tk.END, payload)
+            return
+
     # Função para definir a base do robô
     def definir_base(self):
         """Define a posição e orientação atual do robô como a base e salva no arquivo JSON."""

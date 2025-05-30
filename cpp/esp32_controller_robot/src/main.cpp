@@ -329,8 +329,10 @@ void pararMotores()
 
   String status = "Concluido:" + comandoAtual + ",Pulsos:" + String(pulseCount1) + "," + String(pulseCount2);
   mqttClient.publish("robo/status", status.c_str());
-
-  // Não muda a cor do LED ao parar (mantém o status da conexão)
+  // Envia contagem de pulsos para calibragem na GUI
+  char plotBuf[32];
+  snprintf(plotBuf, sizeof(plotBuf), "%ld,%ld", pulseCount1, pulseCount2);
+  mqttClient.publish("robo_gaveteiro/plotter", plotBuf);
 }
 
 // Controlar motores
