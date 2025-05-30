@@ -8,7 +8,7 @@
 // Configurações de rede
 const char *WIFI_SSID = "SSID";
 const char *WIFI_PASSWORD = "SUA_SENHA";
-const char *MQTT_SERVER = "192.168.121.103";
+const char *MQTT_SERVER = "192.168.137.103";
 const int MQTT_PORT = 1883;
 const char *MQTT_CLIENT_ID = "admin";
 const char *MQTT_TOPIC = "robo_gaveteiro/comandos";
@@ -29,12 +29,12 @@ Adafruit_NeoPixel pixel(NUM_LEDS, LED_PIN, NEO_GRB + NEO_KHZ800);
 #define ENCODER_B2 21
 
 // Pinos dos sensores ultrassônicos
-#define TRIG_PRIORITARIO 8
-#define ECHO_PRIORITARIO 9
-#define TRIG_SECUNDARIO_1 10
-#define ECHO_SECUNDARIO_1 11
-#define TRIG_SECUNDARIO_2 12
-#define ECHO_SECUNDARIO_2 13
+#define TRIG_PRIORITARIO 38
+#define ECHO_PRIORITARIO 37
+#define TRIG_SECUNDARIO_1 40
+#define ECHO_SECUNDARIO_1 39
+#define TRIG_SECUNDARIO_2 42
+#define ECHO_SECUNDARIO_2 41
 
 // Parâmetros dos sensores
 const float DISTANCIA_SEGURANCA = 20.0;                  // cm
@@ -59,7 +59,7 @@ float distancePerPulse = wheelCircumference / pulsesPerRevolution;
 
 // Variáveis de controle
 const long PULSOS_FRENTE_TRAS = 27000;
-const long PULSOS_CURVA = 1000;
+const long PULSOS_CURVA = 685;
 bool emMovimento = false;
 bool emergencia = false;
 String comandoAtual = "";
@@ -232,13 +232,6 @@ void retomarMovimento()
     digitalWrite(IN3, HIGH);
     digitalWrite(IN4, LOW);
   }
-  else if (comandoAtual == "T")
-  {
-    digitalWrite(IN1, LOW);
-    digitalWrite(IN2, HIGH);
-    digitalWrite(IN3, LOW);
-    digitalWrite(IN4, HIGH);
-  }
   else if (comandoAtual == "D")
   {
     digitalWrite(IN1, HIGH);
@@ -297,7 +290,7 @@ void iniciarMovimento(String comando)
     digitalWrite(IN2, LOW);
     digitalWrite(IN3, LOW);
     digitalWrite(IN4, HIGH);
-    Serial.println("INICIANDO: Direita (1000 pulsos)");
+    Serial.println("INICIANDO: Direita (685 pulsos)");
   }
   else if (comando == "E")
   {
@@ -305,7 +298,7 @@ void iniciarMovimento(String comando)
     digitalWrite(IN2, HIGH);
     digitalWrite(IN3, HIGH);
     digitalWrite(IN4, LOW);
-    Serial.println("INICIANDO: Esquerda (1000 pulsos)");
+    Serial.println("INICIANDO: Esquerda (685 pulsos)");
   }
 
   setLedColor(0, 255, 0); // LED verde ao iniciar movimento
