@@ -201,7 +201,9 @@ class RoboGUI:
         if os.path.exists(caminho_arquivo):
             with open(caminho_arquivo, "r") as f:
                 try:
-                    dados = json.load(f)
+                    raw = f.read().splitlines()
+                    raw = [l for l in raw if not l.strip().startswith('//')]
+                    dados = json.loads("\n".join(raw))
                     return (dados["linha"], dados["coluna"], dados["orientacao"], dados["passos"])
                 except json.JSONDecodeError:
                     pass
@@ -213,7 +215,9 @@ class RoboGUI:
         caminho_arquivo = os.path.join(os.path.dirname(__file__), "positions.json")
         try:
             with open(caminho_arquivo, "r") as f:
-                dados = json.load(f)
+                raw = f.read().splitlines()
+                raw = [l for l in raw if not l.strip().startswith('//')]
+                dados = json.loads("\n".join(raw))
                 if "base" in dados:
                     print(f"📂 Base carregada: {dados['base']}")
                     return dados["base"]
@@ -358,19 +362,10 @@ class RoboGUI:
             self.lista_rotas.insert(tk.END, rota["nome"])
     # Funçao para executar rota selecionada
     def executar_rota(self):
-        selecionado = self.lista_rotas.curselection()
-        if selecionado:
-            rota_nome = self.lista_rotas.get(selecionado)
-            print(f"🔄 Executando rota: {rota_nome}")
-            comandos = self.robo_controller.carregar_rotas(rota_nome)
-            print(f"📜 Comandos carregados: {comandos}")
-            for comando in comandos:
-                print(f"🚀 Enviando comando: {comando}")
-                self.enviar_comando(comando)
-        else:
-            print("⚠️ Nenhuma rota selecionada.")
-            
-    def executar_rota(self):
+        # Só executar se estiver na base e orientado para Norte
+        if not self.base or self.estado_robo[2] != 'N' or (self.estado_robo[0] != self.base['linha'] or self.estado_robo[1] != self.base['coluna']):
+            print("⚠️ Só é possível executar rotas quando o robô estiver na base e orientado para Norte (N).")
+            return
         selecionado = self.lista_rotas.curselection()
         if selecionado:
             rota_nome = self.lista_rotas.get(selecionado)
@@ -444,7 +439,32 @@ class RoboGUI:
                 # (Opcional) Emitir som
                 self.root.bell()
                 return  # Não continue executando comandos
-            
+            elif payload == "obstaculoDireita":
+                print("⚠️ Obstáculo detectado à direita!")
+                linha, coluna, orientacao, _ = self.estado_robo
+                # calcula posição à direita
+                if orientacao == 'N': dr, dc = 0, 1
+                elif orientacao == 'E': dr, dc = 1, 0
+                elif orientacao == 'S': dr, dc = 0, -1
+                else: dr, dc = -1, 0  # W
+                r, c = linha+dr, coluna+dc
+                if 0 <= r < len(self.matriz) and 0 <= c < len(self.matriz[0]):
+                    self.matriz[r][c] = 1
+                    self.atualizar_interface()
+                return
+            elif payload == "obstaculoEsquerda":
+                print("⚠️ Obstáculo detectado à esquerda!")
+                linha, coluna, orientacao, _ = self.estado_robo
+                # calcula posição à esquerda
+                if orientacao == 'N': dr, dc = 0, -1
+                elif orientacao == 'E': dr, dc = -1, 0
+                elif orientacao == 'S': dr, dc = 0, 1
+                else: dr, dc = 1, 0  # W
+                r, c = linha+dr, coluna+dc
+                if 0 <= r < len(self.matriz) and 0 <= c < len(self.matriz[0]):
+                    self.matriz[r][c] = 1
+                    self.atualizar_interface()
+                return
             elif payload == "livre":
                 print("✅ Caminho livre! Robô pode continuar.")
                 # Remove obstáculo à frente do robô
@@ -460,14 +480,12 @@ class RoboGUI:
                 if 0 <= linha_obs < len(self.matriz) and 0 <= coluna_obs < len(self.matriz[0]):
                     self.matriz[linha_obs][coluna_obs] = 0  # Remove obstáculo
                     self.atualizar_interface()
-                
-                
                 if self.pausado_por_obstaculo:
                     self.pausado_por_obstaculo = False
                     # Retoma a execução do ponto parado
                     if hasattr(self, 'comandos_em_execucao') and hasattr(self, 'idx_parado'):
                         self.executar_comandos_sequencialmente(self.comandos_em_execucao, self.idx_parado)
-                return    
+                return
             
             else:
                 print(f"📍 Novo status do robô: {payload}")
