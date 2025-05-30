@@ -1,6 +1,7 @@
 import os
 import json
 import tkinter as tk
+import tkinter.messagebox
 from tkinter import ttk
 import subprocess
 import matplotlib.pyplot as plt
@@ -11,7 +12,10 @@ from robo_controller import RoboController
 from utils import desenhar_ambiente, inverter_comandos
 import socket
 from paho.mqtt import client as mqtt
-import tkinter.messagebox
+from datetime import datetime
+
+# Caminho para arquivo de mapa que armazena matriz, posição do robô e base na pasta graphic_method
+MAP_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), 'map.json'))
 
 class RoboGUI:
     def __init__(self, root):
@@ -28,6 +32,8 @@ class RoboGUI:
 
         # Carregar a base do arquivo JSON
         self.base = self.carregar_base()
+        # Carrega mapa salvo (matriz, posição e base)
+        self.load_map()
 
         # Criar controlador do robô
         self.robo_controller = RoboController(self.matriz, self.estado_robo)
@@ -48,15 +54,12 @@ class RoboGUI:
         self.frame_controles = ttk.Frame(self.notebook)
         self.notebook.add(self.frame_controles, text='Manual')
         
-        # Aba Automação
         self.frame_automacao = ttk.Frame(self.notebook)
         self.notebook.add(self.frame_automacao, text='Automação')
 
-        
-        self.frame_rotas = ttk.Frame(self.notebook)
-        self.notebook.add(self.frame_rotas, text='Rotas Salvas')
-        self.frame_sequencia = ttk.Frame(self.notebook)
-        self.notebook.add(self.frame_sequencia, text='Sequência de Rotas')
+        # Nova aba Simulação para testes de sensor
+        self.frame_simulacao = ttk.Frame(self.notebook)
+        self.notebook.add(self.frame_simulacao, text='Simulação')
         
         # Criar frame para configuração de servidor MQTT local (opcional)
         self.frame_mqtt = ttk.Frame(self.frame_controles)
@@ -70,6 +73,19 @@ class RoboGUI:
         self.ax.set_aspect('equal')  # Garantir que o gráfico seja quadrado
         self.canvas = FigureCanvasTkAgg(self.fig, master=self.frame_controles)
         self.canvas.get_tk_widget().pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
+
+        # Gráfico de movimentação na aba Automação
+        self.fig_auto, self.ax_auto = plt.subplots(figsize=(5, 5))
+        self.fig_auto.subplots_adjust(left=0.05, right=0.95, top=0.95, bottom=0.05)
+        self.ax_auto.set_aspect('equal')
+        self.canvas_automacao = FigureCanvasTkAgg(self.fig_auto, master=self.frame_automacao)
+        self.canvas_automacao.get_tk_widget().pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
+
+        # Widgets da aba Automação: lista de rotas e botão de execução
+        self.lista_rotas = tk.Listbox(self.frame_automacao, height=10)
+        self.lista_rotas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=10, pady=10)
+        self.btn_executar_rota_auto = ttk.Button(self.frame_automacao, text="Executar Rota", command=self.executar_rota)
+        self.btn_executar_rota_auto.pack(pady=5)
 
         # --- Widgets da aba Controles ---
         # Botões de controle do robô
@@ -88,45 +104,12 @@ class RoboGUI:
         self.btn_salvar_rota = ttk.Button(self.frame_controles_lateral, text="Salvar Rota", command=self.salvar_rota)
         self.btn_salvar_rota.grid(row=4, column=2, pady=5)
         
-        # Botão para simular obstáculo
-        self.btn_simular_obstaculo = ttk.Button(self.frame_controles_lateral, text="Simular Obstáculo", command=self.simular_obstaculo)
-        self.btn_simular_obstaculo.grid(row=11, column=0, columnspan=3, pady=10)
-        
-        # Botão para simular caminho livre
-        self.btn_simular_livre = ttk.Button(self.frame_controles_lateral, text="Simular Livre", command=self.simular_livre)
-        self.btn_simular_livre.grid(row=12, column=0, columnspan=3, pady=10)    
-        
-        #Grafico locomoção 
-        self.canvas_automacao = FigureCanvasTkAgg(self.fig, master=self.frame_automacao)
-        self.canvas_automacao.get_tk_widget().pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
-
-
-        # --- Widgets da aba Automação ---
-        # Exemplo: botões e listas para gravação, salvar, executar rotas, etc.
-        self.btn_iniciar_gravacao = ttk.Button(self.frame_automacao, text="Iniciar Gravação", command=self.iniciar_gravacao)
-        self.btn_iniciar_gravacao.pack(pady=5)
-        self.btn_salvar_rota = ttk.Button(self.frame_automacao, text="Salvar Rota", command=self.salvar_rota)
-        self.btn_salvar_rota.pack(pady=5)
-        self.btn_executar_rota = ttk.Button(self.frame_automacao, text="Executar Rota", command=self.executar_rota)
-        self.btn_executar_rota.pack(pady=5)
-        self.btn_retornar_base = ttk.Button(self.frame_automacao, text="Voltar à Base", command=self.retornar_inicio)
-        self.btn_retornar_base.pack(pady=5)
-        # Lista de rotas salvas
-        self.lista_rotas = tk.Listbox(self.frame_automacao)
-        self.lista_rotas.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
-
-        self.btn_executar_rota = ttk.Button(self.frame_automacao, text="Executar Rota", command=self.executar_rota)
-        self.btn_executar_rota.pack(pady=10)
-
-        # --- Widgets da aba Sequência de Rotas ---
-        # Exemplo: botões e listas para executar sequências de rotas, etc.
-        # Adicionar botão para definir a base
-        self.btn_definir_base = ttk.Button(self.frame_controles_lateral, text="Definir Base", command=self.definir_base)
-        self.btn_definir_base.grid(row=5, column=0, pady=5)
-
         # Exibir a base atual
         self.label_base = ttk.Label(self.frame_controles_lateral, text="Base: Não definida")
         self.label_base.grid(row=6, column=0, columnspan=3, pady=5)
+        # Exibe base inicial carregada, se existir
+        if self.base:
+            self.label_base.config(text=f"Base: ({self.base['linha']}, {self.base['coluna']}, {self.base['orientacao']})")
 
         # Configuração de tempo de espera
         self.label_wait = ttk.Label(self.frame_controles_lateral, text="Tempo de Espera (s):")
@@ -149,7 +132,9 @@ class RoboGUI:
         self.lista_comandos.grid(row=8, column=0, columnspan=3, pady=5)
                 
         # Inicializar o ambiente
-        desenhar_ambiente(self.ax, self.canvas, self.matriz, self.estado_robo[:2])
+        # Desenha ambiente inicial incluindo base se definida
+        desenhar_ambiente(self.ax, self.canvas, self.matriz, self.estado_robo, getattr(self, 'base', None))
+        self.canvas.draw()
 
         # Capturar evento de fechamento
         self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
@@ -189,6 +174,15 @@ class RoboGUI:
         self.notebook.add(self.frame_plotter, text='Plotter')
         self.listbox_plotter = tk.Listbox(self.frame_plotter, height=10)
         self.listbox_plotter.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+
+        # --- Widgets da aba Simulação ---
+        # Botão para simular obstáculo
+        self.btn_simular_obstaculo = ttk.Button(self.frame_simulacao, text="Simular Obstáculo", command=self.simular_obstaculo)
+        self.btn_simular_obstaculo.pack(pady=10)
+        
+        # Botão para simular caminho livre
+        self.btn_simular_livre = ttk.Button(self.frame_simulacao, text="Simular Livre", command=self.simular_livre)
+        self.btn_simular_livre.pack(pady=10)    
 
     def porta_em_uso(self, porta):
         """Verifica se a porta está em uso."""
@@ -246,6 +240,19 @@ class RoboGUI:
 
     def enviar_comando(self, comando):
         """Envia um comando MQTT para a ESP32."""
+        # Verifica obstáculo à frente antes de enviar via MQTT
+        if comando == "F":
+            linha, coluna, orientacao, _ = self.estado_robo
+            # calcula deslocamento de acordo com orientação
+            if orientacao == 'N': dr, dc = -1, 0
+            elif orientacao == 'S': dr, dc = 1, 0
+            elif orientacao == 'E': dr, dc = 0, 1
+            else: dr, dc = 0, -1  # W
+            r, c = linha + dr, coluna + dc
+            # se dentro dos limites e houver obstáculo (valor 1)
+            if 0 <= r < len(self.matriz) and 0 <= c < len(self.matriz[0]) and self.matriz[r][c] == 1:
+                tkinter.messagebox.showwarning("Obstáculo detectado", "Há um obstáculo à frente. Comando não enviado.")
+                return
         try:
             self.mqtt_local_client.publish("robo_gaveteiro/comandos", comando)
             print(f"✅ Comando '{comando}' enviado para o tópico 'robo_gaveteiro/comandos'")
@@ -263,8 +270,11 @@ class RoboGUI:
     
     def atualizar_interface(self):
         """Atualiza a interface gráfica com a posição atual do robô."""
+        # Atualiza gráfico na aba Manual
         desenhar_ambiente(self.ax, self.canvas, self.matriz, self.estado_robo, getattr(self, "base", None))
         self.canvas.draw()
+        # Atualiza gráfico na aba Automação
+        desenhar_ambiente(self.ax_auto, self.canvas_automacao, self.matriz, self.estado_robo, getattr(self, "base", None))
         self.canvas_automacao.draw()
         
     def inserir_pausa(self):
@@ -503,8 +513,11 @@ class RoboGUI:
         elif msg.topic == "robo_gaveteiro/comandos":
             print(f"🔄 Comando recebido: {payload}")
         elif msg.topic == "robo_gaveteiro/plotter":
-            print(f"📊 Pulsos recebidos: {payload}")
-            self.listbox_plotter.insert(tk.END, payload)
+            # Adiciona timestamp às entradas de plotter
+            timestamp = datetime.now().strftime('%H:%M:%S')
+            entry = f"{timestamp} - {payload}"
+            print(f"📊 Pulsos recebidos: {entry}")
+            self.listbox_plotter.insert(tk.END, entry)
             return
 
     # Função para definir a base do robô
@@ -537,6 +550,8 @@ class RoboGUI:
    
    # Função de fechamento da janela
     def on_closing(self):
+        # Salva o estado do mapa antes de sair
+        self.save_map()
         self.mqtt_client.disconnect()
         self.root.destroy()
         self.root.quit()
@@ -638,4 +653,34 @@ class RoboGUI:
         # Atualizar interface
         self.atualizar_interface()
         tkinter.messagebox.showinfo("Reset", "Sistema reiniciado com sucesso!")
+
+    def load_map(self):
+        """Carrega matriz, estado_robo e base de MAP_PATH se existir."""
+        if os.path.exists(MAP_PATH):
+            try:
+                with open(MAP_PATH, 'r') as f:
+                    data = json.load(f)
+                    # matriz
+                    self.matriz = data.get('matriz', self.matriz)
+                    # estado do robô
+                    est = data.get('estado_robo')
+                    if est and isinstance(est, (list, tuple)) and len(est) == 4:
+                        self.estado_robo = tuple(est)
+                    # base
+                    self.base = data.get('base', self.base)
+            except Exception:
+                print('⚠️ Falha ao carregar map.json, usando valores padrão.')
+
+    def save_map(self):
+        """Salva matriz, estado_robo e base em MAP_PATH."""
+        data = {
+            'matriz': self.matriz,
+            'estado_robo': list(self.estado_robo),
+            'base': self.base
+        }
+        try:
+            with open(MAP_PATH, 'w') as f:
+                json.dump(data, f, indent=4)
+        except Exception as e:
+            print(f'❌ Erro ao salvar map.json: {e}')
 
