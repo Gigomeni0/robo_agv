@@ -397,7 +397,7 @@ class RoboGUI:
         """Simula o recebimento de um obstáculo pelo MQTT."""
         class DummyMsg:
             topic = "robo_gaveteiro/status"
-            payload = b"obstaculo"
+            payload = b"obstaculoFrente"
         self.on_mqtt_message(None, None, DummyMsg())
     
     def simular_livre(self):
@@ -413,7 +413,7 @@ class RoboGUI:
         print(f"📡 Mensagem recebida: {msg.topic} {payload}")
 
         if msg.topic == "robo_gaveteiro/status":
-            if payload == "obstaculo":
+            if payload == "obstaculoFrente":
                 print("⚠️ Obstáculo detectado! Robô parado.")
                 # Marcar obstáculo à frente do robô
                 linha, coluna, orientacao, _ = self.estado_robo
