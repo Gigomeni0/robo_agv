@@ -52,14 +52,15 @@ unsigned long tempoObstaculoSaiu = 0;
 // Variáveis dos encoders
 volatile long pulseCount1 = 0;
 volatile long pulseCount2 = 0;
-int pulsesPerRevolution = 2740;
+const int pulsesPerRevolution = 2740 * 2; // dobrar para canais A+B
 float wheelDiameter = 12.0;
 float wheelCircumference = PI * wheelDiameter;
 float distancePerPulse = wheelCircumference / pulsesPerRevolution;
 
 // Variáveis de controle
 const long PULSOS_FRENTE_TRAS = 27000;
-const long PULSOS_CURVA = 685;
+float trackWidthCm = 40.0; // cm - distância entre rodas, ajuste conforme seu robô
+long PULSOS_CURVA = 0;     // será calculado no setup
 bool emMovimento = false;
 bool emergencia = false;
 String comandoAtual = "";
@@ -545,7 +546,9 @@ void setup()
 
   // Configura interrupções
   attachInterrupt(digitalPinToInterrupt(ENCODER_A), encoderISR1, RISING);
+  attachInterrupt(digitalPinToInterrupt(ENCODER_B), encoderISR1, RISING);
   attachInterrupt(digitalPinToInterrupt(ENCODER_A2), encoderISR2, RISING);
+  attachInterrupt(digitalPinToInterrupt(ENCODER_B2), encoderISR2, RISING);
 
   // Conecta ao Wi-Fi e MQTT
   connectToWiFi();
@@ -553,6 +556,15 @@ void setup()
   mqttClient.setCallback(mqttCallback);
   connectToMQTT();
   mqttClient.subscribe(MQTT_TOPIC);
+
+  // Calcula quantidade de pulsos para curva de 90 graus
+  {
+    float anguloDeg = 90.0;
+    float arcoCm = PI * trackWidthCm * (anguloDeg / 360.0);
+    PULSOS_CURVA = (long)(arcoCm / distancePerPulse);
+    Serial.print("PULSOS_CURVA calculado: ");
+    Serial.println(PULSOS_CURVA);
+  }
 
   Serial.println("Sistema inicializado com LED de status e retomada automatica");
   setLedColor(0, 255, 0); // LED verde quando tudo inicializado com sucesso
