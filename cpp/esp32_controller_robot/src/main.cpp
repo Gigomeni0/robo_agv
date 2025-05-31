@@ -4,6 +4,8 @@
 #include <PubSubClient.h>
 #include <queue>
 #include <Adafruit_NeoPixel.h> // Biblioteca para controle do LED endereçável
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 
 // Configurações de rede
 const char *WIFI_SSID = "SSID";
@@ -95,6 +97,7 @@ void verificarMovimento();
 void processarFila();
 void calcularRPM_Distancia();
 void setLedColor(uint8_t r, uint8_t g, uint8_t b); // Nova função para controle do LED
+void taskControle(void *pvParameters);             // Protótipo da tarefa de controle (sensores, encoders, movimentos)
 
 // Interrupções dos encoders
 void encoderISR1()
@@ -116,7 +119,7 @@ void setLedColor(uint8_t r, uint8_t g, uint8_t b)
   pixel.show();
 }
 
-// Função para ler sensor ultrassônico
+// Função para ler sensor ultrassonico
 float lerSensorUltrassonico(int trigPin, int echoPin)
 {
   digitalWrite(trigPin, LOW);
@@ -362,12 +365,21 @@ void verificarMovimento()
   if (!emMovimento)
     return;
 
+  // timeout de movimento: após TIMEOUT_MOVIMENTO, para e pisca LEDs
   if (millis() - inicioMovimento > TIMEOUT_MOVIMENTO)
   {
     Serial.println("ERRO: Timeout de movimento");
     pararMotores();
     pulsosRestantes1 = 0;
     pulsosRestantes2 = 0;
+    // Piscar LED roxo 3 vezes
+    for (int i = 0; i < 3; i++)
+    {
+      setLedColor(128, 0, 128);
+      vTaskDelay(pdMS_TO_TICKS(200));
+      setLedColor(0, 0, 0);
+      vTaskDelay(pdMS_TO_TICKS(200));
+    }
     return;
   }
 
@@ -514,11 +526,30 @@ void mqttCallback(char *topic, byte *payload, unsigned int length)
   filaMensagens.push(String(mensagem));
 }
 
-// Setup
-void setup()
+// Tarefa de controle executada no core 0: lê sensores, processa encoders, movimento e cálculos
+void taskControle(void *pvParameters)
 {
-  Serial.begin(115200);
+  (void)pvParameters;
+  const TickType_t delayTicks = pdMS_TO_TICKS(10);
+  for (;;)
+  {
+    if (!esperandoPausa)
+    {
+      verificarSensores();
+      if (!emergencia)
+      {
+        verificarMovimento();
+        processarFila();
+      }
+      calcularRPM_Distancia();
+    }
+    vTaskDelay(delayTicks);
+  }
+}
 
+// Tarefa de controle (sensores, encoders, movimentos)
+void taskControle(void *pvParameters)
+{
   // Inicializa o NeoPixel
   pixel.begin();
   pixel.setBrightness(50);  // Ajuste o brilho conforme necessário (0-255)
@@ -568,6 +599,26 @@ void setup()
 
   Serial.println("Sistema inicializado com LED de status e retomada automatica");
   setLedColor(0, 255, 0); // LED verde quando tudo inicializado com sucesso
+
+  // Cria tarefa de controle (sensores, encoders e movimento) no core 0
+  xTaskCreatePinnedToCore(
+      taskControle,   // função da tarefa
+      "TaskControle", // nome da tarefa
+      4096,           // stack size em bytes
+      NULL,           // parâmetro
+      1,              // prioridade
+      NULL,           // handle
+      0               // core (0 ou 1)
+  );
+}
+
+// Setup
+void setup()
+{
+  Serial.begin(115200);
+
+  // Cria a tarefa de controle
+  xTaskCreate(taskControle, "TaskControle", 4096, NULL, 1, NULL);
 }
 
 // Loop principal
@@ -601,46 +652,6 @@ void loop()
       // Durante pausa, só atualiza sensores e MQTT
       verificarSensores();
       return;
-    }
-  }
-
-  // Verifica sensores
-  verificarSensores();
-
-  // Processamento normal
-  if (!emergencia)
-  {
-    verificarMovimento();
-    processarFila();
-    calcularRPM_Distancia();
-  }
-
-  // Debug
-  static unsigned long lastDebug = 0;
-  if (millis() - lastDebug > 500)
-  {
-    lastDebug = millis();
-    if (emMovimento)
-    {
-      Serial.print("Progresso: ");
-      Serial.print(pulseCount1);
-      Serial.print("/");
-      Serial.print((comandoAtual == "F" || comandoAtual == "T") ? PULSOS_FRENTE_TRAS : PULSOS_CURVA);
-      Serial.print(" | ");
-      Serial.println(pulseCount2);
-    }
-
-    Serial.print("Distancias: Prior=");
-    Serial.print(distanciaPrioritaria);
-    Serial.print("cm, Sec1=");
-    Serial.print(distanciaSecundaria1);
-    Serial.print("cm, Sec2=");
-    Serial.print(distanciaSecundaria2);
-    Serial.println("cm");
-
-    if (emergencia)
-    {
-      Serial.println("EMERGENCIA ATIVA - Aguardando obstaculo sair");
     }
   }
 }
