@@ -6,6 +6,11 @@
 #include <Adafruit_NeoPixel.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include <Wire.h>
+#include <MPU6050.h>
+
+#define SDA_PIN 47
+#define SCL_PIN 48
 
 // Configurações de rede
 const char *WIFI_SSID = "SSID";
@@ -81,6 +86,12 @@ float totalDistance1 = 0, totalDistance2 = 0;
 WiFiClient espClient;
 PubSubClient mqttClient(espClient);
 std::queue<String> filaMensagens;
+
+// Variáveis do giroscópio
+MPU6050 mpu;
+float gzBias = 0.0f;
+float yaw = 0.0f;
+unsigned long lastGyroUs = 0;
 
 // Protótipos de funções
 void connectToWiFi();
@@ -231,6 +242,9 @@ void iniciarMovimento(String comando)
     digitalWrite(IN3, HIGH);
     digitalWrite(IN4, LOW);
     Serial.println("INICIANDO: Esquerda");
+    // Reset yaw para curva giroscópio
+    yaw = 0.0f;
+    lastGyroUs = micros();
   }
 
   setLedColor(0, 255, 0);
@@ -331,6 +345,19 @@ void verificarMovimento()
       vTaskDelay(pdMS_TO_TICKS(200));
       setLedColor(0, 0, 0);
       vTaskDelay(pdMS_TO_TICKS(200));
+    }
+    return;
+  }
+
+  // Lógica de curva por giroscópio
+  if (comandoAtual == "D" || comandoAtual == "E")
+  {
+    if (fabs(yaw) >= 90.0f)
+    {
+      pararMotores();
+      yaw = 0.0f;
+      pulsosRestantes1 = 0;
+      pulsosRestantes2 = 0;
     }
     return;
   }
@@ -533,6 +560,18 @@ void taskSensoresEncoders(void *pvParameters)
     // Cálculos dos encoders
     calcularRPM_Distancia();
 
+    // Integração de giroscópio para curvas
+    if (emMovimento && (comandoAtual == "D" || comandoAtual == "E"))
+    {
+      unsigned long nowUs = micros();
+      float dt = (nowUs - lastGyroUs) / 1000000.0f;
+      lastGyroUs = nowUs;
+      int16_t gx, gy, gz;
+      mpu.getRotation(&gx, &gy, &gz);
+      float gz_dps = gz / 131.0f - gzBias;
+      yaw += gz_dps * dt;
+    }
+
     vTaskDelay(xDelay);
   }
 }
@@ -540,6 +579,34 @@ void taskSensoresEncoders(void *pvParameters)
 void setup()
 {
   Serial.begin(115200);
+
+  // Inicializa MPU6050 para curvas por giroscópio
+  Wire.begin(SDA_PIN, SCL_PIN);
+  mpu.initialize();
+  if (!mpu.testConnection())
+  {
+    Serial.println("Erro: conexão com MPU6050 falhou!");
+    while (1)
+      ;
+  }
+  Serial.println("MPU6050 conectado com sucesso");
+  // Calibração de bias Z
+  {
+    const int N_CALIB = 200;
+    long sum = 0;
+    for (int i = 0; i < N_CALIB; ++i)
+    {
+      int16_t gx, gy, gz;
+      mpu.getRotation(&gx, &gy, &gz);
+      sum += gz;
+      delay(5);
+    }
+    gzBias = sum / (float)N_CALIB / 131.0f;
+    Serial.print("Bias Z (°/s): ");
+    Serial.println(gzBias);
+  }
+  yaw = 0.0f;
+  lastGyroUs = micros();
 
   // Configura pinos
   pinMode(IN1, OUTPUT);
