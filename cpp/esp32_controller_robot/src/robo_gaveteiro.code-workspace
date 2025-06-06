@@ -6,6 +6,10 @@
 		{
 			"name": "esp32_controller_robot",
 			"path": ".."
+		},
+		{
+			"name": "MPU6050",
+			"path": "../../../../PlatformIO/Projects/MPU6050"
 		}
 	],
 	"settings": {

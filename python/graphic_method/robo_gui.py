@@ -32,9 +32,7 @@ class RoboGUI:
 
         # Carregar a base do arquivo JSON
         self.base = self.carregar_base()
-        # Carrega mapa salvo (matriz, posição e base)
-        self.load_map()
-
+        
         # Criar controlador do robô
         self.robo_controller = RoboController(self.matriz, self.estado_robo)
 
@@ -183,6 +181,9 @@ class RoboGUI:
         # Botão para simular caminho livre
         self.btn_simular_livre = ttk.Button(self.frame_simulacao, text="Simular Livre", command=self.simular_livre)
         self.btn_simular_livre.pack(pady=10)    
+
+        # Mover a chamada para load_map após a inicialização dos widgets
+        self.load_map()
 
     def porta_em_uso(self, porta):
         """Verifica se a porta está em uso."""
@@ -522,14 +523,16 @@ class RoboGUI:
 
     # Função para definir a base do robô
     def definir_base(self):
-        """Define a posição e orientação atual do robô como a base e salva no arquivo JSON."""
+        """Define a base do robô como o centro da matriz e salva no arquivo JSON."""
+        linhas = len(self.matriz)
+        colunas = len(self.matriz[0])
         self.base = {
-            "linha": self.estado_robo[0],
-            "coluna": self.estado_robo[1],
-            "orientacao": self.estado_robo[2]
+            "linha": linhas // 2,
+            "coluna": colunas // 2,
+            "orientacao": "N"  # Orientação padrão para Norte
         }
         self.label_base.config(text=f"Base: ({self.base['linha']}, {self.base['coluna']}, {self.base['orientacao']})")
-        print(f"📍 Base definida: {self.base}")
+        print(f"📍 Base definida no centro da matriz: {self.base}")
 
         # Salvar a base no arquivo JSON
         caminho_arquivo = os.path.join(os.path.dirname(__file__), "positions.json")
@@ -670,6 +673,10 @@ class RoboGUI:
                     self.base = data.get('base', self.base)
             except Exception:
                 print('⚠️ Falha ao carregar map.json, usando valores padrão.')
+
+        # Garantir que a base seja inicializada corretamente
+        if not self.base:
+            self.definir_base()
 
     def save_map(self):
         """Salva matriz, estado_robo e base em MAP_PATH."""

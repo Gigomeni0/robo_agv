@@ -22,6 +22,7 @@ def verificar_sensores(matriz, linha, coluna, orientacao):
 
 
 def desenhar_ambiente(ax, canvas, matriz, posicao_robo, base=None):
+    print(f"🔍 Desenhando ambiente: Base={base}, Posição do robô={posicao_robo}")
     ax.clear()
     linhas, colunas = len(matriz), len(matriz[0])
 
