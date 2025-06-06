@@ -523,8 +523,10 @@ void taskSensoresEncoders(void *pvParameters)
         char distBuf[16];
         snprintf(distBuf, sizeof(distBuf), "%.2f", distanciaPrioritaria);
         mqttClient.publish(MQTT_TOPIC_PLOTTER, distBuf);
-        // também enviar via status
-        mqttClient.publish(MQTT_TOPIC_STATUS, distBuf);
+        // também enviar via status com prefixo
+        char statusBuf[24];
+        snprintf(statusBuf, sizeof(statusBuf), "dist:%.2f", distanciaPrioritaria);
+        mqttClient.publish(MQTT_TOPIC_STATUS, statusBuf);
       }
     }
 

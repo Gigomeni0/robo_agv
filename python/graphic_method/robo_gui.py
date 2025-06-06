@@ -426,7 +426,22 @@ class RoboGUI:
         
     # Função de callback para mensagens recebidas do MQTT
     def on_mqtt_message(self, client, userdata, msg):
-        payload = msg.payload.decode()
+        topic = msg.topic
+        payload = msg.payload.decode('utf-8')
+        # Status: distância do ultrassom
+        if topic == 'robo_gaveteiro/status' and payload.startswith('dist:'):
+            try:
+                dist = float(payload.split(':',1)[1])
+                # exibe em Plotter
+                self.listbox_plotter.insert('end', f"Ultrassom: {dist:.2f} cm")
+            except ValueError:
+                pass
+        # Plotter: contagens de encoder
+        elif topic == 'robo_gaveteiro/plotter':
+            # recebe "pc1,pc2"
+            self.listbox_plotter.insert('end', f"Encoder: {payload}")
+            return
+
         print(f"📡 Mensagem recebida: {msg.topic} {payload}")
 
         if msg.topic == "robo_gaveteiro/status":
